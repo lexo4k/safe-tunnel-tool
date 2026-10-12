@@ -39,5 +39,6 @@ dependencies {
     implementation("androidx.activity:activity-ktx:1.10.1")
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("com.wireguard.android:tunnel:1.0.20260102")
+    implementation("com.github.mwiede:jsch:2.28.2")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
 }

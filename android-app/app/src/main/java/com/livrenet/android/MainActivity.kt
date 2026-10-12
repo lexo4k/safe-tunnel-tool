@@ -159,6 +159,37 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private val openVpnProfilePicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        try {
+            val profile = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                ?: throw IllegalArgumentException("Não foi possível ler o arquivo.")
+            val remoteMatch = Regex("(?im)^\\s*remote\\s+([^\\s#]+)(?:\\s+\\d+)?").find(profile)
+                ?: throw IllegalArgumentException("O perfil não contém uma linha 'remote host porta'.")
+            val host = remoteMatch.groupValues[1].trim()
+            if (!profile.contains("<client") && !profile.contains("client")) {
+                throw IllegalArgumentException("O arquivo não parece ser um perfil OpenVPN válido.")
+            }
+            val server = PublicServer(
+                host = host,
+                ip = host,
+                country = "Perfil importado",
+                speed = 0L,
+                ovpn = profile
+            )
+            selectedOpenVpnServer = server
+            lastSelectedServerIp = null
+            profileText.text = "Perfil OpenVPN importado: $host. Será validado antes da conexão."
+            statusText.text = "Perfil importado. Toque em Conectar para validar e iniciar."
+            refreshConnectButton()
+        } catch (error: Exception) {
+            selectedOpenVpnServer = null
+            profileText.text = "Nenhum perfil OpenVPN importado."
+            statusText.text = "Não foi possível importar: ${error.message ?: "arquivo inválido"}"
+            refreshConnectButton()
+        }
+    }
+
     private val vpnPermission = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val pendingOpenVpnProfile = openVpnProfileAfterPermission
         if (result.resultCode == Activity.RESULT_OK) {
@@ -325,6 +356,15 @@ class MainActivity : ComponentActivity() {
             setOnClickListener { connectRandomServer() }
         }
         serverCard.addView(randomVpnButton, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 8 })
+        val importOpenVpnButton = Button(this).apply {
+            text = "Importar perfil OpenVPN (.ovpn)"
+            styleButton(this)
+            setOnClickListener {
+                openVpnProfilePicker.launch(arrayOf("application/x-openvpn-profile", "application/octet-stream", "text/plain", "*/*"))
+            }
+        }
+        serverCard.addView(importOpenVpnButton, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 8 })
+
 
         connectButton = Button(this).apply {
             text = "Conectar"
@@ -345,7 +385,7 @@ class MainActivity : ComponentActivity() {
                     connected -> disconnectTunnel()
                     selectedOpenVpnServer != null -> selectOpenVpnServer(selectedOpenVpnServer!!)
                     config != null -> requestVpnPermission()
-                    else -> statusText.text = "Toque em Buscar servidores OpenVPN ou importe um perfil WireGuard válido."
+                    else -> statusText.text = "Busque um servidor OpenVPN, importe um perfil .ovpn ou carregue um perfil WireGuard."
                 }
             }
         }
@@ -379,7 +419,7 @@ class MainActivity : ComponentActivity() {
             modesCard.addView(row, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 8 })
         }
 
-        modeRow("OpenVPN • MOTOR PRINCIPAL", "Núcleo OpenVPN 3 integrado ao app. Certificados ou servidores públicos incompatíveis podem ser recusados com segurança; escolha outro servidor se isso ocorrer.", "INTEGRADO", true)
+        modeRow("OpenVPN • MOTOR PRINCIPAL", "Servidor público da lista ou perfil .ovpn importado. O app valida o perfil antes de iniciar; certificado e servidor precisam ser compatíveis.", "INTEGRADO", true)
         modeRow("SSH Direct", "Ainda precisa de motor SSH e servidor autorizado.", "EM DESENVOLVIMENTO", false)
         modeRow("SSH + Proxy", "Ainda precisa de motor SSH/Proxy e servidor autorizado.", "EM DESENVOLVIMENTO", false)
         modeRow("SSH + SSL", "Ainda precisa de transporte TLS/SSH e servidor autorizado.", "EM DESENVOLVIMENTO", false)

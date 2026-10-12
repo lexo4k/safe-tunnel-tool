@@ -3,6 +3,7 @@ package com.livrenet.android
 import com.jcraft.jsch.ChannelDirectTCPIP
 import com.jcraft.jsch.JSch
 import com.jcraft.jsch.Session
+import com.jcraft.jsch.SocketFactory as JschSocketFactory
 import java.io.DataInputStream
 import java.io.DataOutputStream
 import java.io.EOFException
@@ -33,7 +34,8 @@ class SshSocksProxy {
         username: String,
         password: String,
         knownHostsPath: String,
-        tlsWrapped: Boolean = false
+        tlsWrapped: Boolean = false,
+        protectSocket: ((Socket) -> Boolean)? = null
     ) {
         close()
         val jsch = JSch()
@@ -48,7 +50,28 @@ class SshSocksProxy {
             setProperty("ServerAliveCountMax", "3")
         }
         newSession.setConfig(options)
-        if (tlsWrapped) newSession.setProxy(TlsSshProxy())
+        if (tlsWrapped) {
+            newSession.setProxy(TlsSshProxy(protectSocket))
+        } else if (protectSocket != null) {
+            newSession.setSocketFactory(object : JschSocketFactory {
+                override fun createSocket(hostName: String, remotePort: Int): Socket {
+                    val socket = Socket()
+                    try {
+                        if (!protectSocket.invoke(socket)) {
+                            throw IllegalStateException("Android não conseguiu proteger o socket SSH contra recursão VPN.")
+                        }
+                        socket.connect(java.net.InetSocketAddress(hostName, remotePort), 15000)
+                        return socket
+                    } catch (error: Exception) {
+                        runCatching { socket.close() }
+                        throw error
+                    }
+                }
+
+                override fun getInputStream(socket: Socket): java.io.InputStream = socket.getInputStream()
+                override fun getOutputStream(socket: Socket): java.io.OutputStream = socket.getOutputStream()
+            })
+        }
         newSession.connect(15000)
 
         try {

@@ -57,7 +57,7 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
         with:
-          gradle-version: "9.6.0"
+          gradle-version: "8.14.4"
 
       - name: Build debug APK
         run: gradle -p android-app :app:assembleDebug --stacktrace

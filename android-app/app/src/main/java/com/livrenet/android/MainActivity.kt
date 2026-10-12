@@ -274,6 +274,7 @@ class MainActivity : ComponentActivity() {
         val brandText = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         brandText.addView(label("LIVRENET", 26f, white, true))
         brandText.addView(label("PROTEÇÃO • CONEXÃO GLOBAL", 11f, mint, true))
+        brandText.addView(label("Versão ${BuildConfig.VERSION_NAME} • build ${BuildConfig.GIT_SHA}", 11f, muted))
         brandRow.addView(logo)
         brandRow.addView(brandText)
         root.addView(brandRow)

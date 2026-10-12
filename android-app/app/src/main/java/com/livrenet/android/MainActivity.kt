@@ -46,6 +46,7 @@ class MainActivity : ComponentActivity() {
     @Volatile private var connectAfterPermission = false
     @Volatile private var openVpnProfileAfterPermission: String? = null
     @Volatile private var lastServerCandidates: List<PublicServer> = emptyList()
+    @Volatile private var randomConnectAfterSearch = false
     @Volatile private var lastSelectedServerIp: String? = null
     @Volatile private var tlsDialogShowing = false
     @Volatile private var openVpnConnected = false
@@ -559,7 +560,8 @@ class MainActivity : ComponentActivity() {
     private fun connectRandomServer() {
         val candidates = lastServerCandidates.ifEmpty { loadCachedServers() }
         if (candidates.isEmpty()) {
-            statusText.text = "Ainda não há servidores guardados. Buscando a lista pública; depois toque em “Conectar a servidor aleatório”."
+            statusText.text = "Ainda não há servidores guardados. Buscando a lista pública para conectar automaticamente a uma opção aleatória…"
+            randomConnectAfterSearch = true
             findFreeVpnGateServers()
             return
         }
@@ -581,9 +583,18 @@ class MainActivity : ComponentActivity() {
         val cached = lastServerCandidates.ifEmpty { loadCachedServers() }
         if (!internetValidated && cached.isNotEmpty()) {
             lastServerCandidates = cached
-            statusText.text = "Sem internet validada. Abrindo ${cached.size} perfis salvos no aparelho; conectar ainda depende de alcançar o servidor."
-            profileText.text = "Lista offline. Alguns servidores podem estar fora do ar ou ter mudado de configuração."
-            showServerPicker(cached)
+            if (randomConnectAfterSearch) {
+                randomConnectAfterSearch = false
+                val chosen = cached.filter { it.ip != lastSelectedServerIp }.ifEmpty { cached }.random()
+                selectedOpenVpnServer = chosen
+                statusText.text = "Opção aleatória offline: ${chosen.country} • ${chosen.ip}. Validando perfil…"
+                profileText.text = "Perfil salvo localmente; a conexão depende de o servidor ainda estar acessível."
+                selectOpenVpnServer(chosen)
+            } else {
+                statusText.text = "Sem internet validada. Abrindo ${cached.size} perfis salvos no aparelho; conectar ainda depende de alcançar o servidor."
+                profileText.text = "Lista offline. Alguns servidores podem estar fora do ar ou ter mudado de configuração."
+                showServerPicker(cached)
+            }
             return
         }
         freeVpnButton.isEnabled = false
@@ -641,7 +652,16 @@ class MainActivity : ComponentActivity() {
                         profileText.text = "Nenhum servidor foi selecionado."
                     } else {
                         lastServerCandidates = candidates
-                        showServerPicker(candidates)
+                        if (randomConnectAfterSearch) {
+                            randomConnectAfterSearch = false
+                            val chosen = candidates.filter { it.ip != lastSelectedServerIp }.ifEmpty { candidates }.random()
+                            selectedOpenVpnServer = chosen
+                            statusText.text = "Opção aleatória escolhida: ${chosen.country} • ${chosen.ip}. Validando perfil…"
+                            profileText.text = "Servidor escolhido automaticamente entre ${candidates.size} opções encontradas."
+                            selectOpenVpnServer(chosen)
+                        } else {
+                            showServerPicker(candidates)
+                        }
                     }
                 }
             } catch (error: Exception) {
@@ -650,9 +670,18 @@ class MainActivity : ComponentActivity() {
                     freeVpnButton.isEnabled = true
                     if (cached.isNotEmpty()) {
                         lastServerCandidates = cached
-                        statusText.text = "Sem acesso à lista online. Mostrando ${cached.size} perfis salvos. A conexão só funcionará se houver uma rede que alcance o servidor."
-                        profileText.text = "Lista offline do aparelho. Perfis públicos podem ter expirado ou estar indisponíveis."
-                        showServerPicker(cached)
+                        if (randomConnectAfterSearch) {
+                            randomConnectAfterSearch = false
+                            val chosen = cached.filter { it.ip != lastSelectedServerIp }.ifEmpty { cached }.random()
+                            selectedOpenVpnServer = chosen
+                            statusText.text = "Lista online indisponível. Tentando opção aleatória salva: ${chosen.country} • ${chosen.ip}."
+                            profileText.text = "Perfil local selecionado; o servidor ainda pode estar offline."
+                            selectOpenVpnServer(chosen)
+                        } else {
+                            statusText.text = "Sem acesso à lista online. Mostrando ${cached.size} perfis salvos. A conexão só funcionará se houver uma rede que alcance o servidor."
+                            profileText.text = "Lista offline do aparelho. Perfis públicos podem ter expirado ou estar indisponíveis."
+                            showServerPicker(cached)
+                        }
                     } else {
                         statusText.text = "Falha ao buscar servidores: ${error.message ?: "verifique a internet e tente novamente"}. Nenhum perfil offline foi salvo."
                         profileText.text = "Nenhuma conexão VPN foi iniciada."

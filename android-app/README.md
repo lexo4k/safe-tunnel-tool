@@ -10,13 +10,13 @@ Native Android companion app for the LivreNet project.
 - Checks the WireGuard backend state after a connect request instead of treating the request alone as proof that the tunnel is active.
 - In-app protocol support notes distinguish working WireGuard support from external OpenVPN import and SSH modes that are not implemented yet.
 - Public server discovery through the VPN Gate public API, with country/IP labels and advertised speed ordering.
-- Downloads the selected VPN Gate OpenVPN configuration and shares it as an `.ovpn` profile with an installed compatible OpenVPN client.
+- Discovers public VPN Gate profiles and attempts to open a selected `.ovpn` profile directly in a known compatible OpenVPN client, without opening Android's share sheet.
 - Builds a debug APK through GitHub Actions.
 
 ## Protocol support and remaining implementation work
 
 - **WireGuard:** implemented in-app, using a user-supplied valid `.conf` profile. The app checks the backend state after requesting connection; successful tunnel activation still does not guarantee that the remote server has working routes or internet access.
-- **OpenVPN:** not embedded yet. VPN Gate profiles are shared with an external compatible OpenVPN client.
+- **OpenVPN:** not embedded yet. Selecting a VPN Gate server writes a temporary `.ovpn` profile and attempts to open it directly in a known compatible external client. The user must confirm import/connection in that client; LivreNet itself does not establish the OpenVPN tunnel.
 - **SSH Direct, SSH + Proxy, SSH + SSL, SSH + SSL Proxy:** not implemented yet. These require real SSH transport implementations, correct proxy/TLS handling, and an authorized reachable SSH gateway. The interface deliberately does not claim these modes work.
 
 To finish the requested multi-protocol experience, the next engineering tasks are integrating and testing an OpenVPN engine suitable for Android, then implementing or integrating maintained SSH transport components, adding server/profile configuration for authorized endpoints, and testing connect/disconnect, reconnects, DNS, routes, and traffic on real devices. No private server or credentials are available in this repository, so those cannot be fabricated.
@@ -39,4 +39,4 @@ The workflow `.github/workflows/android-debug-apk.yml` runs `gradle assembleDebu
 
 ## Privacy and permissions
 
-Android asks the user to authorize VPN access when a tunnel is started. The VPN Gate profile is downloaded from the public service and shared through Android's file-sharing mechanism; the profile is stored temporarily in the app cache. Do not commit VPN profiles or private keys to GitHub.
+Android asks the user to authorize VPN access when a tunnel is started. The VPN Gate profile is downloaded from the public service and, when a compatible external client is installed, opened through a temporary cache file shared with that client using a read-only content URI. Do not commit VPN profiles or private keys to GitHub.

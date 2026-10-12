@@ -233,5 +233,11 @@ class OpenVpnVpnService : VpnService() {
                 context.startService(intent)
             }
         }
+
+        fun disconnect(context: Context) {
+            val intent = Intent(context, OpenVpnVpnService::class.java)
+                .setAction(ACTION_STOP)
+            context.startService(intent)
+        }
     }
 }

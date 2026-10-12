@@ -1,9 +1,9 @@
-val livreNetGitSha = System.getenv("GITHUB_SHA")?.take(7) ?: "local"
-
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
+
+val livreNetGitSha = System.getenv("GITHUB_SHA")?.take(7) ?: "local"
 
 android {
     namespace = "com.livrenet.android"

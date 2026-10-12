@@ -16,6 +16,7 @@ import java.util.concurrent.Executors
 class OpenVpnVpnService : VpnService() {
     private val worker = Executors.newSingleThreadExecutor()
     @Volatile private var reconnectRequested = false
+    @Volatile private var connectionGeneration = 0
     private var tunnelBuilder: Builder? = null
     private var detachedTunFd: Int = -1
     private var notificationText = "Preparando o túnel OpenVPN"
@@ -29,10 +30,12 @@ class OpenVpnVpnService : VpnService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> {
+                connectionGeneration++
                 reconnectRequested = false
                 runCatching { nativeStop() }
                 notificationText = "Desconectando OpenVPN"
                 updateNotification()
+                publishStatus("OpenVPN desconectado por solicitação do usuário.")
                 stopSelf()
                 return START_NOT_STICKY
             }
@@ -43,20 +46,23 @@ class OpenVpnVpnService : VpnService() {
                     stopSelf()
                     return START_NOT_STICKY
                 }
+                val generation = ++connectionGeneration
                 reconnectRequested = true
+                runCatching { nativeStop() }
                 notificationText = "Conectando ao servidor OpenVPN…"
                 updateNotification()
+                publishStatus("Conectando ao servidor OpenVPN…")
                 worker.execute {
                     var retry = 0
                     var finalMessage = "OpenVPN desconectado."
-                    while (reconnectRequested) {
+                    while (reconnectRequested && generation == connectionGeneration) {
                         finalMessage = try {
                             nativeConnect(profile, this)
                         } catch (error: Throwable) {
                             "Falha no motor OpenVPN: ${error.message ?: error.javaClass.simpleName}"
                         }
 
-                        if (!reconnectRequested) break
+                        if (!reconnectRequested || generation != connectionGeneration) break
                         if (isNonRetryableFailure(finalMessage) || retry >= MAX_RECONNECTS) {
                             publishStatus(finalMessage)
                             reconnectRequested = false
@@ -73,7 +79,7 @@ class OpenVpnVpnService : VpnService() {
                             reconnectRequested = false
                         }
                     }
-                    if (!reconnectRequested) {
+                    if (generation == connectionGeneration && !reconnectRequested) {
                         publishStatus("OpenVPN desconectado ou tentativas automáticas encerradas.")
                         stopSelf()
                     }
@@ -94,6 +100,7 @@ class OpenVpnVpnService : VpnService() {
     }
 
     override fun onDestroy() {
+        connectionGeneration++
         reconnectRequested = false
         runCatching { nativeStop() }
         worker.shutdownNow()

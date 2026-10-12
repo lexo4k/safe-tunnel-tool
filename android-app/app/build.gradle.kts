@@ -1,3 +1,5 @@
+val livreNetGitSha = System.getenv("GITHUB_SHA")?.take(7) ?: "local"
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -7,12 +9,17 @@ android {
     namespace = "com.livrenet.android"
     compileSdk = 36
 
+    buildFeatures {
+        buildConfig = true
+    }
+
     defaultConfig {
         applicationId = "com.livrenet.android"
         minSdk = 24
         targetSdk = 35
-        versionCode = 4
-        versionName = "0.4.0"
+        versionCode = 5
+        versionName = "0.5.0"
+        buildConfigField("String", "GIT_SHA", "\"$livreNetGitSha\"")
     }
 
     compileOptions {

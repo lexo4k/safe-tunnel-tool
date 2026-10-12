@@ -56,14 +56,7 @@ class MainActivity : ComponentActivity() {
                     statusText.text = "Este servidor usa um certificado TLS incompatível com o núcleo OpenVPN. A verificação de segurança foi mantida; tente outro servidor público."
                 }
                 val alternatives = lastServerCandidates.filter { it.ip != lastSelectedServerIp }
-                if (alternatives.isNotEmpty() && !isFinishing) {
-                    AlertDialog.Builder(this@MainActivity)
-                        .setTitle("Certificado do servidor incompatível")
-                        .setMessage("A conexão foi recusada com segurança. Isso é incompatibilidade do certificado do servidor escolhido, não falta de internet. Selecione outro servidor.")
-                        .setPositiveButton("Escolher outro servidor") { _, _ -> showServerPicker(alternatives) }
-                        .setNegativeButton("Fechar", null)
-                        .show()
-                }
+                if (!isFinishing) showTlsCompatibilityDialog(alternatives)
             }
         }
     }
@@ -437,16 +430,116 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun showServerPicker(servers: List<PublicServer>) {
-        val labels = servers.map { server ->
-            "${server.country} • ${server.ip}\nVelocidade anunciada: ${server.speed / 1_000_000} Mbps"
-        }.toTypedArray()
-        AlertDialog.Builder(this)
-            .setTitle("Escolha um servidor público")
-            .setItems(labels) { _, which -> selectOpenVpnServer(servers[which]) }
-            .setNegativeButton("Cancelar", null)
-            .show()
-        statusText.text = "${servers.size} servidores OpenVPN encontrados. Se um falhar na negociação TLS, escolha outro."
-        profileText.text = "A lista é pública e pode conter servidores indisponíveis."
+        if (servers.isEmpty()) {
+            statusText.text = "Não há outros servidores na lista. Busque servidores novamente para atualizar as opções."
+            return
+        }
+
+        val density = resources.displayMetrics.density
+        fun dp(value: Int) = (value * density).toInt()
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(8), dp(18), dp(8))
+        }
+        panel.addView(TextView(this).apply {
+            text = "Escolha um servidor para conectar dentro do LivreNet. Se um certificado falhar, volte aqui e tente outro."
+            textSize = 13f
+            setTextColor(android.graphics.Color.rgb(157, 178, 199))
+            setPadding(0, 0, 0, dp(12))
+        })
+
+        val list = android.widget.LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+        }
+        servers.take(20).forEachIndexed { index, server ->
+            val card = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(14), dp(12), dp(14), dp(12))
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    setColor(android.graphics.Color.rgb(15, 31, 49))
+                    cornerRadius = dp(14).toFloat()
+                    setStroke(dp(1), android.graphics.Color.rgb(48, 75, 98))
+                }
+            }
+            card.addView(TextView(this).apply {
+                text = "${server.country}  •  ${server.ip}"
+                textSize = 15f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+                setTextColor(android.graphics.Color.rgb(239, 246, 255))
+            })
+            card.addView(TextView(this).apply {
+                text = "Velocidade anunciada: ${server.speed / 1_000_000} Mbps  •  Perfil OpenVPN"
+                textSize = 12f
+                setTextColor(android.graphics.Color.rgb(157, 178, 199))
+                setPadding(0, dp(5), 0, dp(10))
+            })
+            val connect = Button(this).apply {
+                text = "Conectar a este servidor"
+                isAllCaps = false
+                setTextColor(android.graphics.Color.rgb(7, 17, 31))
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    setColor(android.graphics.Color.rgb(34, 211, 197))
+                    cornerRadius = dp(11).toFloat()
+                }
+                setOnClickListener {
+                    serverDialog?.dismiss()
+                    selectOpenVpnServer(server)
+                }
+            }
+            card.addView(connect, LinearLayout.LayoutParams(-1, -2))
+            list.addView(card, LinearLayout.LayoutParams(-1, -2).apply {
+                bottomMargin = dp(10)
+            })
+        }
+        val scroll = android.widget.ScrollView(this).apply {
+            isFillViewport = false
+            addView(list)
+        }
+        panel.addView(scroll, LinearLayout.LayoutParams(-1, dp(430)))
+        serverDialog = AlertDialog.Builder(this)
+            .setTitle("Servidores OpenVPN")
+            .setView(panel)
+            .setNegativeButton("Fechar", null)
+            .create()
+        serverDialog?.show()
+        statusText.text = "${servers.size} servidores OpenVPN encontrados. Escolha Conectar no servidor desejado."
+        profileText.text = "Servidores públicos de terceiros. Disponibilidade e certificados variam."
+    }
+
+    private var serverDialog: AlertDialog? = null
+
+    private fun showTlsCompatibilityDialog(alternatives: List<PublicServer>) {
+        val density = resources.displayMetrics.density
+        fun dp(value: Int) = (value * density).toInt()
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(10), dp(20), dp(8))
+        }
+        panel.addView(TextView(this).apply {
+            text = "O servidor apresentou um certificado TLS incompatível. A conexão foi bloqueada com segurança. Sua internet móvel foi detectada normalmente."
+            textSize = 14f
+            setTextColor(android.graphics.Color.rgb(65, 80, 96))
+        })
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Certificado incompatível")
+            .setView(panel)
+            .create()
+        val choose = Button(this).apply {
+            text = if (alternatives.isEmpty()) "Buscar servidores novamente" else "Escolher outro servidor"
+            isAllCaps = false
+            setOnClickListener {
+                dialog.dismiss()
+                if (alternatives.isEmpty()) findFreeVpnGateServers() else showServerPicker(alternatives)
+            }
+        }
+        panel.addView(choose, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(16) })
+        val close = Button(this).apply {
+            text = "Fechar"
+            isAllCaps = false
+            setOnClickListener { dialog.dismiss() }
+        }
+        panel.addView(close, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+        dialog.show()
     }
 
     private fun selectOpenVpnServer(server: PublicServer) {

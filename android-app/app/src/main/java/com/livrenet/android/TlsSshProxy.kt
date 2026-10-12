@@ -16,7 +16,7 @@ import javax.net.ssl.SSLSocketFactory
  * compatible with a normal SSH daemon unless a TLS wrapper is configured there.
  * The platform trust store and hostname verification remain enabled.
  */
-class TlsSshProxy : Proxy {
+class TlsSshProxy(private val protectSocket: ((Socket) -> Boolean)? = null) : Proxy {
     @Volatile private var tlsSocket: SSLSocket? = null
 
     override fun connect(socketFactory: SocketFactory?, host: String?, port: Int, timeout: Int) {
@@ -26,6 +26,9 @@ class TlsSshProxy : Proxy {
 
         val socket = (SSLSocketFactory.getDefault().createSocket() as SSLSocket)
         try {
+            if (protectSocket != null && !protectSocket.invoke(socket)) {
+                throw IllegalStateException("Android não conseguiu proteger o socket TLS/SSH contra recursão VPN.")
+            }
             socket.connect(java.net.InetSocketAddress(host, port), timeout.coerceAtLeast(1000))
             socket.soTimeout = timeout.coerceAtLeast(1000)
             socket.sslParameters = socket.sslParameters.apply {

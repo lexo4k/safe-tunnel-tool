@@ -1,0 +1,26 @@
+services:
+  wireguard:
+    image: lscr.io/linuxserver/wireguard:latest
+    container_name: livrenet-wireguard
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    environment:
+      PUID: "${PUID:-1000}"
+      PGID: "${PGID:-1000}"
+      TZ: "${TZ:-America/Sao_Paulo}"
+      SERVERURL: "${SERVERURL:?Configure SERVERURL no arquivo .env}"
+      SERVERPORT: "51820"
+      PEERS: "${PEERS:-livrenet-android}"
+      PEERDNS: "${PEERDNS:-auto}"
+      INTERNAL_SUBNET: "10.13.13.0"
+      ALLOWEDIPS: "${ALLOWEDIPS:-0.0.0.0/0,::/0}"
+      LOG_CONFS: "false"
+    volumes:
+      - ./config:/config
+      - /lib/modules:/lib/modules:ro
+    ports:
+      - "51820:51820/udp"
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+    restart: unless-stopped

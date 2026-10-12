@@ -49,6 +49,7 @@ class MainActivity : ComponentActivity() {
     @Volatile private var lastSelectedServerIp: String? = null
     @Volatile private var tlsDialogShowing = false
     @Volatile private var openVpnConnected = false
+    @Volatile private var selectedOpenVpnServer: PublicServer? = null
 
     private val openVpnStatusReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -287,15 +288,26 @@ class MainActivity : ComponentActivity() {
             setOnClickListener { findFreeVpnGateServers() }
         }
         serverCard.addView(freeVpnButton, matchWidth())
-        val disconnectOpenVpnButton = Button(this).apply {
-            text = "Desconectar OpenVPN"
-            styleButton(this)
+        connectButton = Button(this).apply {
+            text = "Conectar"
+            isEnabled = false
+            styleButton(this, true)
             setOnClickListener {
-                OpenVpnVpnService.disconnect(this@MainActivity)
-                statusText.text = "Solicitação de desconexão enviada ao serviço OpenVPN…"
+                when {
+                    openVpnConnected -> {
+                        OpenVpnVpnService.disconnect(this@MainActivity)
+                        openVpnConnected = false
+                        statusText.text = "Solicitando desconexão segura…"
+                        refreshConnectButton()
+                    }
+                    connected -> disconnectTunnel()
+                    selectedOpenVpnServer != null -> selectOpenVpnServer(selectedOpenVpnServer!!)
+                    config != null -> requestVpnPermission()
+                    else -> statusText.text = "Toque em Buscar servidores OpenVPN ou importe um perfil WireGuard válido."
+                }
             }
         }
-        serverCard.addView(disconnectOpenVpnButton, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 8 })
+        serverCard.addView(connectButton, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 10 })
         root.addView(serverCard)
 
         val modesCard = card()
@@ -350,15 +362,6 @@ class MainActivity : ComponentActivity() {
             }
         }
         wireguardCard.addView(importButton, matchWidth())
-        connectButton = Button(this).apply {
-            text = "Conectar WireGuard"
-            isEnabled = false
-            styleButton(this, true)
-            setOnClickListener {
-                if (connected) disconnectTunnel() else requestVpnPermission()
-            }
-        }
-        wireguardCard.addView(connectButton, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 10 })
         root.addView(wireguardCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 12 })
 
         val checkInternetButton = Button(this).apply {
@@ -674,23 +677,16 @@ class MainActivity : ComponentActivity() {
                 setTextColor(android.graphics.Color.rgb(157, 178, 199))
                 setPadding(0, dp(5), 0, dp(10))
             })
-            val connect = Button(this).apply {
-                text = "Conectar"
-                isAllCaps = false
-                setTextColor(android.graphics.Color.rgb(7, 17, 31))
-                background = android.graphics.drawable.GradientDrawable().apply {
-                    setColor(android.graphics.Color.rgb(34, 211, 197))
-                    cornerRadius = dp(11).toFloat()
-                }
-                contentDescription = "Conectar à VPN pelo servidor ${server.country}, IP ${server.ip}"
-                setOnClickListener {
-                    isEnabled = false
-                    text = "Validando perfil…"
-                    serverDialog?.dismiss()
-                    selectOpenVpnServer(server)
-                }
+            card.contentDescription = "Selecionar servidor ${server.country}, IP ${server.ip}"
+            card.isClickable = true
+            card.isFocusable = true
+            card.setOnClickListener {
+                selectedOpenVpnServer = server
+                serverDialog?.dismiss()
+                profileText.text = "Selecionado: ${server.country} • ${server.ip}. Use o botão Conectar na tela principal."
+                statusText.text = "Servidor selecionado. Toque em Conectar para iniciar o túnel."
+                refreshConnectButton()
             }
-            card.addView(connect, LinearLayout.LayoutParams(-1, -2))
             list.addView(card, LinearLayout.LayoutParams(-1, -2).apply {
                 bottomMargin = dp(10)
             })
@@ -706,8 +702,10 @@ class MainActivity : ComponentActivity() {
             .setNegativeButton("Fechar", null)
             .create()
         serverDialog?.show()
-        statusText.text = "${servers.size} servidores OpenVPN encontrados. Escolha Conectar no servidor desejado."
-        profileText.text = "Servidores públicos de terceiros. Disponibilidade e certificados variam."
+        statusText.text = "${servers.size} servidores OpenVPN encontrados. Toque em um cartão para selecionar e depois use Conectar."
+        profileText.text = selectedOpenVpnServer?.let { "Selecionado: ${it.country} • ${it.ip}" }
+            ?: "Nenhum servidor selecionado. Toque em um cartão da lista."
+        refreshConnectButton()
     }
 
     private var serverDialog: AlertDialog? = null
@@ -769,6 +767,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 openVpnConnected = false
+                refreshConnectButton()
                 statusText.setTextColor(android.graphics.Color.rgb(157, 178, 199))
                 statusText.text = "Perfil válido. Solicitando a permissão VPN do Android…"
                 profileText.text = "${server.country} • ${server.ip} • perfil validado pelo OpenVPN 3 Core."
@@ -846,10 +845,18 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private fun refreshConnectButton() {
+        if (!::connectButton.isInitialized) return
+        val anyConnected = connected || openVpnConnected
+        connectButton.text = if (anyConnected) "Desconectar" else "Conectar"
+        connectButton.isEnabled = anyConnected || selectedOpenVpnServer != null || config != null
+        connectButton.contentDescription = if (anyConnected) "Desconectar a VPN"
+            else selectedOpenVpnServer?.let { "Conectar ao servidor ${it.country}" } ?: "Conectar à VPN"
+    }
+
     private fun renderState() {
         if (!::connectButton.isInitialized) return
-        connectButton.isEnabled = config != null
-        connectButton.text = if (connected) "Desconectar WireGuard" else "Conectar WireGuard"
+        refreshConnectButton()
         if (connected) statusText.text = "Túnel WireGuard conectado."
     }
 

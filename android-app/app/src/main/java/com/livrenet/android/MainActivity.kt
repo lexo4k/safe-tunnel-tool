@@ -379,6 +379,8 @@ class MainActivity : ComponentActivity() {
                 if (!publicIp.matches(Regex("[0-9a-fA-F:.]{3,45}"))) {
                     throw IllegalStateException("O serviço de IP retornou uma resposta inesperada.")
                 }
+                val diagnosticPrefs = getSharedPreferences("livrenet_diagnostics", Context.MODE_PRIVATE)
+                val previousPublicIp = diagnosticPrefs.getString("last_public_ip", null)
 
                 probeConnection = (URL("https://clients3.google.com/generate_204").openConnection() as HttpURLConnection).apply {
                     requestMethod = "GET"
@@ -388,11 +390,20 @@ class MainActivity : ComponentActivity() {
                 }
                 val code = probeConnection.responseCode
                 val probeOk = code == 204 || (code in 200..299)
+                diagnosticPrefs.edit().putString("last_public_ip", publicIp).apply()
+                val ipComparison = when {
+                    previousPublicIp.isNullOrBlank() ->
+                        "Este é o primeiro IP registrado. Execute o teste antes e depois de conectar para comparar."
+                    previousPublicIp != publicIp ->
+                        "O IP difere do teste anterior ($previousPublicIp). Isso é compatível com uma saída de rede diferente, mas não comprova sozinho que todo o tráfego passa pelo túnel."
+                    else ->
+                        "O IP é igual ao teste anterior. Se você conectou a VPN entre os testes, a saída pelo túnel ainda não foi confirmada."
+                }
                 runOnUiThread {
                     statusText.text = if (probeOk) {
-                        "Diagnóstico concluído: HTTPS respondeu (HTTP $code). IP público observado: $publicIp. Compare com o IP sem VPN para confirmar a saída pelo túnel."
+                        "Diagnóstico HTTPS concluído (HTTP $code). IP público atual: $publicIp. $ipComparison"
                     } else {
-                        "IP público observado: $publicIp. O teste HTTPS respondeu HTTP $code. Verifique o servidor ou tente novamente."
+                        "IP público observado: $publicIp. O teste HTTPS respondeu HTTP $code. $ipComparison"
                     }
                 }
             } catch (error: Exception) {

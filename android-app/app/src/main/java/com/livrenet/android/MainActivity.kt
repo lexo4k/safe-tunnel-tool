@@ -54,6 +54,7 @@ class MainActivity : ComponentActivity() {
     @Volatile private var openVpnServiceStarted = false
     @Volatile private var connectAttemptId = 0
     @Volatile private var selectedOpenVpnServer: PublicServer? = null
+    @Volatile private var selectedProtocol: String = "OpenVPN"
 
     private val openVpnStatusReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -148,6 +149,7 @@ class MainActivity : ComponentActivity() {
             connectAttemptId++
             stream.use { config = Config.parse(it) }
             selectedOpenVpnServer = null
+            selectedProtocol = "WireGuard"
             profileText.text = "Perfil WireGuard carregado na memória do app."
             statusText.text = "Perfil pronto. Toque em Conectar."
             refreshConnectButton()
@@ -179,6 +181,7 @@ class MainActivity : ComponentActivity() {
                 ovpn = profile
             )
             selectedOpenVpnServer = server
+            selectedProtocol = "OpenVPN"
             lastSelectedServerIp = null
             profileText.text = "Perfil OpenVPN importado: $host. Será validado antes da conexão."
             statusText.text = "Perfil importado. Toque em Conectar para validar e iniciar."
@@ -384,8 +387,8 @@ class MainActivity : ComponentActivity() {
                         refreshConnectButton()
                     }
                     connected -> disconnectTunnel()
-                    selectedOpenVpnServer != null -> selectOpenVpnServer(selectedOpenVpnServer!!)
-                    config != null -> requestVpnPermission()
+                    selectedProtocol == "OpenVPN" && selectedOpenVpnServer != null -> selectOpenVpnServer(selectedOpenVpnServer!!)
+                    selectedProtocol == "WireGuard" && config != null -> requestVpnPermission()
                     else -> statusText.text = "Busque um servidor OpenVPN, importe um perfil .ovpn ou carregue um perfil WireGuard."
                 }
             }
@@ -399,14 +402,30 @@ class MainActivity : ComponentActivity() {
             setPadding(0, 6, 0, 12)
         })
 
-        fun modeRow(title: String, description: String, state: String, available: Boolean) {
+        val protocolRows = mutableMapOf<String, LinearLayout>()
+        fun selectProtocol(key: String) {
+            selectedProtocol = key
+            protocolRows.forEach { (protocol, item) ->
+                (item.background as? android.graphics.drawable.GradientDrawable)?.setStroke(
+                    1, if (protocol == key) mint else android.graphics.Color.rgb(50, 76, 99)
+                )
+            }
+            statusText.text = if (key == "OpenVPN") {
+                "Modo OpenVPN selecionado. Escolha um servidor público ou importe um perfil .ovpn."
+            } else {
+                "Modo WireGuard selecionado. Importe um perfil .conf válido para conectar."
+            }
+            refreshConnectButton()
+        }
+
+        fun modeRow(title: String, description: String, state: String, available: Boolean, protocolKey: String? = null) {
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(14, 12, 14, 12)
                 background = android.graphics.drawable.GradientDrawable().apply {
                     setColor(android.graphics.Color.rgb(19, 39, 58))
                     cornerRadius = 16f
-                    setStroke(1, if (available) mint else android.graphics.Color.rgb(50, 76, 99))
+                    setStroke(1, if (protocolKey == selectedProtocol) mint else android.graphics.Color.rgb(50, 76, 99))
                 }
             }
             val heading = LinearLayout(this).apply {
@@ -417,15 +436,21 @@ class MainActivity : ComponentActivity() {
             heading.addView(label(state, 10f, if (available) mint else muted, true))
             row.addView(heading)
             row.addView(label(description, 12f, muted).apply { setPadding(0, 5, 0, 0) })
+            if (protocolKey != null) {
+                protocolRows[protocolKey] = row
+                row.isClickable = true
+                row.isFocusable = true
+                row.setOnClickListener { selectProtocol(protocolKey) }
+            }
             modesCard.addView(row, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 8 })
         }
 
-        modeRow("OpenVPN • MOTOR PRINCIPAL", "Servidor público da lista ou perfil .ovpn importado. O app valida o perfil antes de iniciar; certificado e servidor precisam ser compatíveis.", "INTEGRADO", true)
+        modeRow("OpenVPN • MOTOR PRINCIPAL", "Servidor público da lista ou perfil .ovpn importado. O app valida o perfil antes de iniciar; certificado e servidor precisam ser compatíveis.", "INTEGRADO", true, "OpenVPN")
         modeRow("SSH Direct", "Ainda precisa de motor SSH e servidor autorizado.", "EM DESENVOLVIMENTO", false)
         modeRow("SSH + Proxy", "Ainda precisa de motor SSH/Proxy e servidor autorizado.", "EM DESENVOLVIMENTO", false)
         modeRow("SSH + SSL", "Ainda precisa de transporte TLS/SSH e servidor autorizado.", "EM DESENVOLVIMENTO", false)
         modeRow("SSH + SSL Proxy", "Ainda precisa de transporte TLS/SSH, proxy e servidor autorizado.", "EM DESENVOLVIMENTO", false)
-        modeRow("WireGuard • OPÇÃO ALTERNATIVA", "Motor integrado para perfis WireGuard .conf válidos. Não conecta diretamente aos perfis OpenVPN da lista pública.", "INTEGRADO", true)
+        modeRow("WireGuard • OPÇÃO ALTERNATIVA", "Motor integrado para perfis WireGuard .conf válidos. Não conecta diretamente aos perfis OpenVPN da lista pública.", "INTEGRADO", true, "WireGuard")
         root.addView(modesCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 12 })
 
         val wireguardCard = card().apply {
@@ -568,6 +593,7 @@ class MainActivity : ComponentActivity() {
         val availableChoices = candidates.filter { it.ip != lastSelectedServerIp }.ifEmpty { candidates }
         val chosen = availableChoices.random()
         selectedOpenVpnServer = chosen
+        selectedProtocol = "OpenVPN"
         statusText.text = "Escolha aleatória: ${chosen.country} • ${chosen.ip}. Validando perfil antes de conectar…"
         profileText.text = "Servidor aleatório selecionado entre ${candidates.size} perfis guardados."
         refreshConnectButton()
@@ -587,6 +613,7 @@ class MainActivity : ComponentActivity() {
                 randomConnectAfterSearch = false
                 val chosen = cached.filter { it.ip != lastSelectedServerIp }.ifEmpty { cached }.random()
                 selectedOpenVpnServer = chosen
+                selectedProtocol = "OpenVPN"
                 statusText.text = "Opção aleatória offline: ${chosen.country} • ${chosen.ip}. Validando perfil…"
                 profileText.text = "Perfil salvo localmente; a conexão depende de o servidor ainda estar acessível."
                 selectOpenVpnServer(chosen)
@@ -656,6 +683,7 @@ class MainActivity : ComponentActivity() {
                             randomConnectAfterSearch = false
                             val chosen = candidates.filter { it.ip != lastSelectedServerIp }.ifEmpty { candidates }.random()
                             selectedOpenVpnServer = chosen
+                            selectedProtocol = "OpenVPN"
                             statusText.text = "Opção aleatória escolhida: ${chosen.country} • ${chosen.ip}. Validando perfil…"
                             profileText.text = "Servidor escolhido automaticamente entre ${candidates.size} opções encontradas."
                             selectOpenVpnServer(chosen)
@@ -674,6 +702,7 @@ class MainActivity : ComponentActivity() {
                             randomConnectAfterSearch = false
                             val chosen = cached.filter { it.ip != lastSelectedServerIp }.ifEmpty { cached }.random()
                             selectedOpenVpnServer = chosen
+                            selectedProtocol = "OpenVPN"
                             statusText.text = "Lista online indisponível. Tentando opção aleatória salva: ${chosen.country} • ${chosen.ip}."
                             profileText.text = "Perfil local selecionado; o servidor ainda pode estar offline."
                             selectOpenVpnServer(chosen)
@@ -809,6 +838,7 @@ class MainActivity : ComponentActivity() {
             card.isFocusable = true
             card.setOnClickListener {
                 selectedOpenVpnServer = server
+                selectedProtocol = "OpenVPN"
                 serverDialog?.dismiss()
                 profileText.text = "Selecionado: ${server.country} • ${server.ip}. Validando o perfil e iniciando a conexão…"
                 statusText.text = "Servidor selecionado. Preparando o túnel OpenVPN…"

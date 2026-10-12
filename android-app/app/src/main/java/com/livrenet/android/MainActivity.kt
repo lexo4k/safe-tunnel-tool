@@ -201,6 +201,20 @@ class MainActivity : ComponentActivity() {
         serverCard.addView(freeVpnButton, matchWidth())
         root.addView(serverCard)
 
+        val modesCard = card()
+        modesCard.addView(label("MODOS DE CONEXÃO", 12f, mint, true))
+        modesCard.addView(label("WireGuard • disponível com perfil válido", 14f, white, true).apply {
+            setPadding(0, 10, 0, 4)
+        })
+        modesCard.addView(label("OpenVPN • perfis públicos podem ser importados em um cliente externo. Motor integrado ainda não incluído.", 13f, muted).apply {
+            setPadding(0, 2, 0, 8)
+        })
+        modesCard.addView(label("SSH Direct • SSH + Proxy • SSH + SSL • SSH + SSL Proxy", 14f, white, true))
+        modesCard.addView(label("Esses quatro modos SSH ainda não estão implementados: precisam de transporte SSH/TLS real e de um servidor autorizado. Não serão apresentados como conectados sem um motor funcional.", 13f, muted).apply {
+            setPadding(0, 6, 0, 0)
+        })
+        root.addView(modesCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 12 })
+
         val wireguardCard = card().apply {
             setPadding(18, 18, 18, 18)
         }
@@ -400,9 +414,14 @@ class MainActivity : ComponentActivity() {
         executor.execute {
             try {
                 backend.setState(tunnel, Tunnel.State.UP, selectedConfig)
+                val actualState = backend.getState(tunnel)
                 runOnUiThread {
-                    connected = true
-                    statusText.text = "Túnel WireGuard iniciado. A conectividade depende do servidor e das chaves do perfil."
+                    connected = actualState == Tunnel.State.UP
+                    statusText.text = if (connected) {
+                        "WireGuard ativo no Android. Acesso aos destinos depende do servidor, das chaves e das rotas do perfil."
+                    } else {
+                        "O pedido de conexão terminou, mas o backend não confirmou o túnel ativo. Confira o perfil e tente novamente."
+                    }
                     renderState()
                 }
             } catch (error: Exception) {

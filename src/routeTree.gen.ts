@@ -10,11 +10,35 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as DadosRouteImport } from './routes/dados'
+import { Route as DiagnosticoRouteImport } from './routes/diagnostico'
+import { Route as EconomiaRouteImport } from './routes/economia'
+import { Route as PerfisRouteImport } from './routes/perfis'
 import { Route as ServidoresRouteImport } from './routes/servidores'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DadosRoute = DadosRouteImport.update({
+  id: '/dados',
+  path: '/dados',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DiagnosticoRoute = DiagnosticoRouteImport.update({
+  id: '/diagnostico',
+  path: '/diagnostico',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EconomiaRoute = EconomiaRouteImport.update({
+  id: '/economia',
+  path: '/economia',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PerfisRoute = PerfisRouteImport.update({
+  id: '/perfis',
+  path: '/perfis',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ServidoresRoute = ServidoresRouteImport.update({
@@ -25,27 +49,51 @@ const ServidoresRoute = ServidoresRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/dados': typeof DadosRoute
+  '/diagnostico': typeof DiagnosticoRoute
+  '/economia': typeof EconomiaRoute
+  '/perfis': typeof PerfisRoute
   '/servidores': typeof ServidoresRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/dados': typeof DadosRoute
+  '/diagnostico': typeof DiagnosticoRoute
+  '/economia': typeof EconomiaRoute
+  '/perfis': typeof PerfisRoute
   '/servidores': typeof ServidoresRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/dados': typeof DadosRoute
+  '/diagnostico': typeof DiagnosticoRoute
+  '/economia': typeof EconomiaRoute
+  '/perfis': typeof PerfisRoute
   '/servidores': typeof ServidoresRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/servidores'
+  fullPaths:
+    '/' | '/dados' | '/diagnostico' | '/economia' | '/perfis' | '/servidores'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/servidores'
-  id: '__root__' | '/' | '/servidores'
+  to: '/' | '/dados' | '/diagnostico' | '/economia' | '/perfis' | '/servidores'
+  id:
+    | '__root__'
+    | '/'
+    | '/dados'
+    | '/diagnostico'
+    | '/economia'
+    | '/perfis'
+    | '/servidores'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  DadosRoute: typeof DadosRoute
+  DiagnosticoRoute: typeof DiagnosticoRoute
+  EconomiaRoute: typeof EconomiaRoute
+  PerfisRoute: typeof PerfisRoute
   ServidoresRoute: typeof ServidoresRoute
 }
 
@@ -56,6 +104,34 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dados': {
+      id: '/dados'
+      path: '/dados'
+      fullPath: '/dados'
+      preLoaderRoute: typeof DadosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/diagnostico': {
+      id: '/diagnostico'
+      path: '/diagnostico'
+      fullPath: '/diagnostico'
+      preLoaderRoute: typeof DiagnosticoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/economia': {
+      id: '/economia'
+      path: '/economia'
+      fullPath: '/economia'
+      preLoaderRoute: typeof EconomiaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/perfis': {
+      id: '/perfis'
+      path: '/perfis'
+      fullPath: '/perfis'
+      preLoaderRoute: typeof PerfisRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/servidores': {
@@ -70,6 +146,10 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  DadosRoute: DadosRoute,
+  DiagnosticoRoute: DiagnosticoRoute,
+  EconomiaRoute: EconomiaRoute,
+  PerfisRoute: PerfisRoute,
   ServidoresRoute: ServidoresRoute,
 }
 export const routeTree = rootRouteImport

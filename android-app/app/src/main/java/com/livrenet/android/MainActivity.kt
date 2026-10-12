@@ -751,7 +751,7 @@ class MainActivity : ComponentActivity() {
                     }
                     .distinctBy { it.ip }
                     .sortedByDescending { it.speed }
-                    .take(20)
+                    
                     .toList()
 
                 if (candidates.isNotEmpty()) saveCachedServers(candidates)
@@ -808,7 +808,7 @@ class MainActivity : ComponentActivity() {
     private fun saveCachedServers(servers: List<PublicServer>) {
         runCatching {
             val array = JSONArray()
-            servers.take(20).forEach { server ->
+            servers.forEach { server ->
                 array.put(JSONObject().apply {
                     put("host", server.host)
                     put("ip", server.ip)
@@ -838,7 +838,7 @@ class MainActivity : ComponentActivity() {
             }
                 .distinctBy { it.ip }
                 .sortedByDescending { it.speed }
-                .take(20)
+                
         }.getOrDefault(emptyList())
     }
 
@@ -894,7 +894,7 @@ class MainActivity : ComponentActivity() {
         val list = android.widget.LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
-        servers.take(20).forEachIndexed { index, server ->
+        servers.forEachIndexed { index, server ->
             val card = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(14), dp(12), dp(14), dp(12))

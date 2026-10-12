@@ -1,6 +1,7 @@
 package com.livrenet.android
 
 import android.app.Activity
+import androidx.activity.ComponentActivity
 import android.content.Intent
 import android.net.VpnService
 import android.os.Bundle
@@ -15,7 +16,7 @@ import com.wireguard.android.backend.Tunnel
 import com.wireguard.config.Config
 import java.util.concurrent.Executors
 
-class MainActivity : Activity() {
+class MainActivity : ComponentActivity() {
     private lateinit var statusText: TextView
     private lateinit var profileText: TextView
     private lateinit var connectButton: Button

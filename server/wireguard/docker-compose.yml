@@ -13,7 +13,7 @@ services:
       SERVERPORT: "51820"
       PEERS: "${PEERS:-livrenet-android}"
       PEERDNS: "${PEERDNS:-auto}"
-      INTERNAL_SUBNET: "10.13.13.0"
+      INTERNAL_SUBNET: "10.13.13.0/24"
       ALLOWEDIPS: "${ALLOWEDIPS:-0.0.0.0/0,::/0}"
       LOG_CONFS: "false"
     volumes:

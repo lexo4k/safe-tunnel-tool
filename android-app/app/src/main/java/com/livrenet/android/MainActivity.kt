@@ -848,10 +848,9 @@ class MainActivity : ComponentActivity() {
                 selectedOpenVpnServer = server
                 selectedProtocol = "OpenVPN"
                 serverDialog?.dismiss()
-                profileText.text = "Selecionado: ${server.country} • ${server.ip}. Validando o perfil e iniciando a conexão…"
-                statusText.text = "Servidor selecionado. Preparando o túnel OpenVPN…"
+                profileText.text = "Selecionado: ${server.country} • ${server.ip}. Toque em Conectar para iniciar."
+                statusText.text = "Servidor selecionado. A conexão ainda não foi iniciada."
                 refreshConnectButton()
-                selectOpenVpnServer(server)
             }
             list.addView(card, LinearLayout.LayoutParams(-1, -2).apply {
                 bottomMargin = dp(10)

@@ -132,6 +132,7 @@ class MainActivity : ComponentActivity() {
         override fun onStateChange(newState: Tunnel.State) {
             runOnUiThread {
                 connected = newState == Tunnel.State.UP
+                if (connected) statusText.text = "Túnel WireGuard conectado."
                 renderState()
             }
         }
@@ -151,9 +152,10 @@ class MainActivity : ComponentActivity() {
             refreshConnectButton()
         } catch (error: Exception) {
             config = null
+            selectedOpenVpnServer = null
             profileText.text = "Nenhum perfil WireGuard válido carregado."
             statusText.text = "Não foi possível ler esse perfil: ${error.message ?: "formato inválido"}"
-            connectButton.isEnabled = false
+            refreshConnectButton()
         }
     }
 
@@ -905,7 +907,6 @@ class MainActivity : ComponentActivity() {
     private fun renderState() {
         if (!::connectButton.isInitialized) return
         refreshConnectButton()
-        if (connected) statusText.text = "Túnel WireGuard conectado."
     }
 
     override fun onDestroy() {

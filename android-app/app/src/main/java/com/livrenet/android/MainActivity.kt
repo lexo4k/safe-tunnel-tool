@@ -62,6 +62,7 @@ class MainActivity : ComponentActivity() {
     @Volatile private var sshProxyConnecting = false
     @Volatile private var sshProxy: SshSocksProxy? = null
     @Volatile private var pendingSshStart: Bundle? = null
+    @Volatile private var vpnPermissionTestPending = false
 
     private val openVpnStatusReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -234,6 +235,22 @@ class MainActivity : ComponentActivity() {
     }
 
     private val vpnPermission = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (vpnPermissionTestPending) {
+            vpnPermissionTestPending = false
+            val granted = result.resultCode == Activity.RESULT_OK
+            statusText.text = if (granted) {
+                "Permissão VPN concedida pelo Android. Nenhum túnel foi iniciado."
+            } else {
+                "Permissão VPN não concedida. Nenhum túnel foi iniciado."
+            }
+            internetText.text = if (granted) {
+                "Permissão VPN concedida • túnel não iniciado"
+            } else {
+                "Permissão VPN não concedida"
+            }
+            refreshConnectButton()
+            return@registerForActivityResult
+        }
         val pendingOpenVpnProfile = openVpnProfileAfterPermission
         if (result.resultCode == Activity.RESULT_OK) {
             val pendingSsh = pendingSshStart
@@ -422,6 +439,12 @@ class MainActivity : ComponentActivity() {
         }
         serverCard.addView(importOpenVpnButton, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 8 })
 
+        val testVpnPermissionButton = Button(this).apply {
+            text = "Testar permissão VPN do Android"
+            styleButton(this)
+            setOnClickListener { requestVpnPermissionTest() }
+        }
+        serverCard.addView(testVpnPermissionButton, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 8 })
 
         connectButton = Button(this).apply {
             text = "Conectar"
@@ -1009,6 +1032,19 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    private fun requestVpnPermissionTest() {
+        val permissionIntent = VpnService.prepare(this)
+        if (permissionIntent == null) {
+            statusText.text = "Permissão VPN já concedida pelo Android. Nenhum túnel foi iniciado."
+            internetText.text = "Permissão VPN concedida • túnel não iniciado"
+            refreshConnectButton()
+            return
+        }
+        vpnPermissionTestPending = true
+        statusText.text = "Solicitando apenas a permissão VPN do Android. Nenhum servidor será contatado."
+        vpnPermission.launch(permissionIntent)
     }
 
     private fun requestVpnPermission() {

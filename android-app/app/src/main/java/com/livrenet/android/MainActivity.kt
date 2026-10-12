@@ -4,11 +4,14 @@ import android.app.Activity
 import android.app.AlertDialog
 import androidx.activity.ComponentActivity
 import android.content.Context
+import android.content.BroadcastReceiver
+import android.content.IntentFilter
 import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.VpnService
 import android.os.Bundle
+import android.os.Build
 import android.util.Base64
 import android.view.Gravity
 import android.view.View
@@ -39,6 +42,14 @@ class MainActivity : ComponentActivity() {
     @Volatile private var config: Config? = null
     @Volatile private var connected = false
     @Volatile private var connectAfterPermission = false
+    @Volatile private var openVpnProfileAfterPermission: String? = null
+
+    private val openVpnStatusReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val message = intent?.getStringExtra(OpenVpnVpnService.EXTRA_STATUS) ?: return
+            if (::statusText.isInitialized) statusText.text = message
+        }
+    }
 
     private data class PublicServer(
         val host: String,
@@ -78,13 +89,38 @@ class MainActivity : ComponentActivity() {
     }
 
     private val vpnPermission = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        if (result.resultCode == Activity.RESULT_OK && connectAfterPermission) {
-            connectAfterPermission = false
-            connectTunnel()
+        val pendingOpenVpnProfile = openVpnProfileAfterPermission
+        if (result.resultCode == Activity.RESULT_OK) {
+            if (pendingOpenVpnProfile != null) {
+                openVpnProfileAfterPermission = null
+                statusText.text = "Permissão concedida. Iniciando o núcleo OpenVPN 3…"
+                profileText.text = "Conectando diretamente pelo serviço VPN do LivreNet."
+                OpenVpnVpnService.connect(this, pendingOpenVpnProfile)
+            } else if (connectAfterPermission) {
+                connectAfterPermission = false
+                connectTunnel()
+            }
         } else {
+            openVpnProfileAfterPermission = null
             connectAfterPermission = false
             statusText.text = "Permissão VPN não concedida. Nenhum túnel foi iniciado."
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        val filter = IntentFilter(OpenVpnVpnService.ACTION_STATUS)
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(openVpnStatusReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("DEPRECATION")
+            registerReceiver(openVpnStatusReceiver, filter)
+        }
+    }
+
+    override fun onStop() {
+        runCatching { unregisterReceiver(openVpnStatusReceiver) }
+        super.onStop()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -396,62 +432,33 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun selectOpenVpnServer(server: PublicServer) {
-        // This app does not bundle the OpenVPN core yet. Open the profile directly
-        // in a known compatible client, without showing Android's share sheet.
-        statusText.text = "Preparando perfil OpenVPN para ${server.country}…"
-        profileText.text = "Procurando um cliente OpenVPN compatível."
+        statusText.text = "Validando o perfil com o núcleo OpenVPN 3…"
+        profileText.text = "${server.country} • ${server.ip} • verificando configuração antes de conectar."
 
         executor.execute {
-            try {
-                val safeIp = server.ip.replace('.', '-').replace(':', '-')
-                val profileFile = File(cacheDir, "livrenet-$safeIp.ovpn")
-                profileFile.writeText(server.ovpn, Charsets.UTF_8)
-                val uri = FileProvider.getUriForFile(
-                    this,
-                    "${packageName}.fileprovider",
-                    profileFile
-                )
-
-                runOnUiThread {
-                    val packages = listOf("de.blinkt.openvpn", "net.openvpn.openvpn")
-                    var launched = false
-
-                    for (clientPackage in packages) {
-                        try {
-                            val intent = Intent(Intent.ACTION_VIEW).apply {
-                                setPackage(clientPackage)
-                                setDataAndType(uri, "application/x-openvpn-profile")
-                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            }
-                            startActivity(intent)
-                            launched = true
-                            statusText.text = "Perfil enviado ao cliente OpenVPN. Confirme a importação/conexão nele."
-                            profileText.text = "${server.country} • ${server.ip} • perfil temporário preparado."
-                            break
-                        } catch (_: android.content.ActivityNotFoundException) {
-                            // Try the next known client package.
-                        } catch (error: Exception) {
-                            statusText.text = "O cliente OpenVPN não conseguiu abrir o perfil: ${error.message ?: "erro desconhecido"}"
-                        }
-                    }
-
-                    if (!launched) {
-                        AlertDialog.Builder(this)
-                            .setTitle("Cliente OpenVPN não encontrado")
-                            .setMessage(
-                                "O perfil de ${server.country} (${server.ip}) foi preparado, mas o LivreNet ainda não possui o motor OpenVPN interno. " +
-                                    "Não foi encontrado um cliente compatível instalado. A conexão não foi iniciada."
-                            )
-                            .setPositiveButton("Entendi", null)
-                            .show()
-                        statusText.text = "Perfil preparado; nenhum cliente OpenVPN compatível foi aberto."
-                        profileText.text = "Nenhuma VPN foi conectada."
-                    }
+            val validation = OpenVpnNative.validateProfileOrMessage(server.ovpn)
+            runOnUiThread {
+                if (!validation.startsWith("OK:")) {
+                    statusText.text = validation
+                    profileText.text = "Perfil não iniciado. Verifique a configuração ou tente outro servidor."
+                    AlertDialog.Builder(this)
+                        .setTitle("Não foi possível validar o perfil")
+                        .setMessage(validation)
+                        .setPositiveButton("Entendi", null)
+                        .show()
+                    return@runOnUiThread
                 }
-            } catch (error: Exception) {
-                runOnUiThread {
-                    statusText.text = "Não foi possível preparar o perfil OpenVPN: ${error.message ?: "erro desconhecido"}"
-                    profileText.text = "Nenhuma VPN foi conectada."
+
+                openVpnProfileAfterPermission = server.ovpn
+                profileText.text = "${server.country} • ${server.ip} • perfil validado pelo OpenVPN 3 Core."
+                statusText.text = "Perfil validado. Solicitando autorização VPN do Android…"
+                val permissionIntent = VpnService.prepare(this)
+                if (permissionIntent == null) {
+                    openVpnProfileAfterPermission = null
+                    statusText.text = "Iniciando o túnel OpenVPN dentro do LivreNet…"
+                    OpenVpnVpnService.connect(this, server.ovpn)
+                } else {
+                    vpnPermission.launch(permissionIntent)
                 }
             }
         }

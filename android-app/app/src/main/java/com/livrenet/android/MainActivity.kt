@@ -245,6 +245,15 @@ class MainActivity : ComponentActivity() {
             setOnClickListener { findFreeVpnGateServers() }
         }
         serverCard.addView(freeVpnButton, matchWidth())
+        val disconnectOpenVpnButton = Button(this).apply {
+            text = "Desconectar OpenVPN"
+            styleButton(this)
+            setOnClickListener {
+                OpenVpnVpnService.disconnect(this@MainActivity)
+                statusText.text = "Solicitação de desconexão enviada ao serviço OpenVPN…"
+            }
+        }
+        serverCard.addView(disconnectOpenVpnButton, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 8 })
         root.addView(serverCard)
 
         val modesCard = card()

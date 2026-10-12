@@ -395,7 +395,8 @@ class MainActivity : ComponentActivity() {
                     sshProxyConnected || sshProxyConnecting -> disconnectSshProxy()
                     selectedProtocol == "OpenVPN" && selectedOpenVpnServer != null -> selectOpenVpnServer(selectedOpenVpnServer!!)
                     selectedProtocol == "WireGuard" && config != null -> requestVpnPermission()
-                    selectedProtocol in setOf("SSH Direct", "SSH + Proxy", "SSH + SSL", "SSH + SSL Proxy") -> showSshProxyDialog()
+                    selectedProtocol == "SSH + SSL Proxy" -> statusText.text = "SSH + SSL Proxy ainda não está disponível: falta o motor de proxy TLS separado e o encaminhamento TUN."
+                    selectedProtocol in setOf("SSH Direct", "SSH + Proxy", "SSH + SSL") -> showSshProxyDialog()
                     else -> statusText.text = "Escolha um protocolo e forneça um perfil ou servidor compatível."
                 }
             }
@@ -420,10 +421,10 @@ class MainActivity : ComponentActivity() {
             statusText.text = when (key) {
                 "OpenVPN" -> "Modo OpenVPN selecionado. Escolha um servidor público ou importe um perfil .ovpn."
                 "WireGuard" -> "Modo WireGuard selecionado. Importe um perfil .conf válido para conectar."
-                "SSH Direct" -> "SSH Direct selecionado. No momento abre somente SOCKS5 local; o encaminhamento TUN completo ainda não está integrado." 
-                "SSH + Proxy" -> "SSH + Proxy selecionado. Configure um servidor SSH autorizado para abrir um proxy SOCKS5 local."
-                "SSH + SSL" -> "SSH + SSL selecionado. Exige endpoint que ofereça SSH encapsulado em TLS com certificado válido; ainda não encaminha todo o tráfego Android."
-                "SSH + SSL Proxy" -> "SSH + SSL Proxy ainda não tem um motor de proxy TLS separado nem encaminhamento TUN completo."
+                "SSH Direct" -> "SSH Direct selecionado. No momento abre somente SOCKS5 local; o encaminhamento TUN completo ainda não está integrado.",
+                "SSH + Proxy" -> "SSH + Proxy selecionado. Configure um servidor SSH autorizado para abrir um proxy SOCKS5 local.",
+                "SSH + SSL" -> "SSH + SSL selecionado. Exige endpoint que ofereça SSH encapsulado em TLS com certificado válido; ainda não encaminha todo o tráfego Android.",
+                "SSH + SSL Proxy" -> "SSH + SSL Proxy ainda não tem um motor de proxy TLS separado nem encaminhamento TUN completo.",
                 else -> "Esse modo ainda não tem motor integrado."
             }
             refreshConnectButton()
@@ -1031,7 +1032,7 @@ class MainActivity : ComponentActivity() {
             openVpnConnecting || sshProxyConnecting -> "Cancelar conexão"
             else -> "Conectar"
         }
-        connectButton.isEnabled = active || openVpnConnecting || sshProxyConnecting || selectedOpenVpnServer != null || config != null || selectedProtocol in setOf("SSH Direct", "SSH + Proxy", "SSH + SSL", "SSH + SSL Proxy")
+        connectButton.isEnabled = active || openVpnConnecting || sshProxyConnecting || selectedOpenVpnServer != null || config != null || selectedProtocol in setOf("SSH Direct", "SSH + Proxy", "SSH + SSL")
         connectButton.contentDescription = when {
             active -> "Desconectar a VPN"
             openVpnConnecting || sshProxyConnecting -> "Cancelar tentativa de conexão"

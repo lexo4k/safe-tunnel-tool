@@ -1,6 +1,5 @@
 plugins {
     id("com.android.application")
-    id("org.jetbrains.kotlin.android")
 }
 
 val livreNetGitSha = System.getenv("GITHUB_SHA")?.take(7) ?: "local"

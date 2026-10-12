@@ -11,9 +11,11 @@ Construa uma interface visual profissional, mobile-first, que funcione bem em An
 - Seção "Como conseguir internet a baixo custo" com opções honestas: Wi-Fi autorizado, benefícios oficiais da operadora, plano adequado; alertar contra arquivos de configuração desconhecidos e apps que pedem credenciais.
 - Acessibilidade, estados vazios, mensagens de erro úteis, navegação inferior mobile e visual de produto acabado. Use ícones simples, cores escuras azul-marinho/ciano, cartões bem espaçados.
 - Não incluir qualquer payload de bypass, host/SNI de operadora, credenciais de terceiros, exploração de falhas de cobrança, nem alegar suporte a todas as operadoras/aparelhos. O projeto é um painel web/protótipo de gerenciamento, não um cliente VPN nativo e não deve apresentar botão como se conectasse de verdade.
-Entregue a experiência visual completa e código organizado, com avisos claros do que exige um app Android nativo usando VpnService e um servidor VPN real.
+- Entregue a experiência visual completa e código organizado, com avisos claros do que exige um app Android nativo usando VpnService e um servidor VPN real.
 
-This project was built with [Lovable](https://lovable.dev).
+## Implementação Android real
+
+O repositório atual é uma aplicação web React/Vite. Ele não consegue criar uma VPN de sistema no Android. Consulte [docs/ANDROID_VPN_IMPLEMENTATION.md](docs/ANDROID_VPN_IMPLEMENTATION.md) para a arquitetura nativa planejada, o fluxo obrigatório de autorização do Android, requisitos de privacidade e testes de aceitação. Uma conexão real requer um módulo Android nativo, perfil válido e um servidor VPN autorizado e acessível.
 
 **Live app**: https://safe-tunnel-tool.lovable.app
 
@@ -23,15 +25,15 @@ Continue developing this project in the [Lovable editor](https://lovable.dev/pro
 
 - **Ship faster**: describe what you want to build and Lovable handles the code.
 - **Stay in sync**: every change made in Lovable is committed straight to this repository.
-- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
+- **Full ownership**: This code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
 
 ## Development
 
 Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
 
 ```sh
-git clone <this-repository-url>
-cd <repository-name>
+git clone https://github.com/lexo4k/safe-tunnel-tool.git
+cd safe-tunnel-tool
 npm i
 npm run dev
 ```

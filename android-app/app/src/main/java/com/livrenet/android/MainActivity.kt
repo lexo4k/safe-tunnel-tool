@@ -1,4 +1,4 @@
-package com.livrenet.android
+package com.lumenvpn.android
 
 import android.app.Activity
 import android.app.AlertDialog
@@ -128,7 +128,7 @@ class MainActivity : ComponentActivity() {
     )
 
     private val tunnel = object : Tunnel {
-        override fun getName(): String = "LivreNet"
+        override fun getName(): String = "Lúmen VPN"
         override fun onStateChange(newState: Tunnel.State) {
             runOnUiThread {
                 connected = newState == Tunnel.State.UP
@@ -168,7 +168,7 @@ class MainActivity : ComponentActivity() {
                 openVpnServiceStarted = true
                 refreshConnectButton()
                 statusText.text = "Permissão concedida. Iniciando o núcleo OpenVPN 3…"
-                profileText.text = "Conectando diretamente pelo serviço VPN do LivreNet."
+                profileText.text = "Conectando diretamente pelo serviço VPN do Lúmen VPN."
                 OpenVpnVpnService.connect(this, pendingOpenVpnProfile)
             } else if (connectAfterPermission) {
                 connectAfterPermission = false
@@ -267,8 +267,8 @@ class MainActivity : ComponentActivity() {
             gravity = Gravity.CENTER_VERTICAL
         }
         val logo = ImageView(this).apply {
-            setImageResource(R.drawable.livrenet_logo)
-            contentDescription = "Logotipo LivreNet, proteção e conexão global"
+            setImageResource(R.drawable.lumenvpn_logo)
+            contentDescription = "Logotipo Lúmen VPN, proteção e conexão global"
             layoutParams = LinearLayout.LayoutParams(68, 68).apply { rightMargin = 14 }
         }
         val brandText = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -413,7 +413,7 @@ class MainActivity : ComponentActivity() {
         root.addView(diagnosticsButton, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 8 })
 
         val note = label(
-            "SEGURANÇA E COMPATIBILIDADE\nO LivreNet pede a autorização VPN oficial do Android ao conectar pela primeira vez. O motor OpenVPN funciona dentro do app. Se um servidor tiver TLS, certificado, cifra ou autenticação incompatível, o app orienta a trocar de servidor sem desativar a validação de segurança. Perfis guardados podem ser exibidos offline, mas a conexão precisa de uma rede que alcance o servidor. Nenhum servidor garante internet móvel grátis ou ilimitada.",
+            "SEGURANÇA E COMPATIBILIDADE\nO Lúmen VPN pede a autorização VPN oficial do Android ao conectar pela primeira vez. O motor OpenVPN funciona dentro do app. Se um servidor tiver TLS, certificado, cifra ou autenticação incompatível, o app orienta a trocar de servidor sem desativar a validação de segurança. Perfis guardados podem ser exibidos offline, mas a conexão precisa de uma rede que alcance o servidor. Nenhum servidor garante internet móvel grátis ou ilimitada.",
             12f, muted
         ).apply { setPadding(4, 20, 4, 0) }
         root.addView(note)
@@ -445,7 +445,7 @@ class MainActivity : ComponentActivity() {
                 if (!publicIp.matches(Regex("[0-9a-fA-F:.]{3,45}"))) {
                     throw IllegalStateException("O serviço de IP retornou uma resposta inesperada.")
                 }
-                val diagnosticPrefs = getSharedPreferences("livrenet_diagnostics", Context.MODE_PRIVATE)
+                val diagnosticPrefs = getSharedPreferences("lumenvpn_diagnostics", Context.MODE_PRIVATE)
                 val previousPublicIp = diagnosticPrefs.getString("last_public_ip", null)
 
                 probeConnection = (URL("https://clients3.google.com/generate_204").openConnection() as HttpURLConnection).apply {
@@ -502,7 +502,7 @@ class MainActivity : ComponentActivity() {
             "Acesso à internet não confirmado"
         }
         if (!hasInternet) {
-            statusText.text = "O LivreNet não conseguiu confirmar acesso à internet. Isso não informa se ainda há franquia no chip: o Android não fornece ao app uma verificação universal de saldo/pacote. Sem tráfego permitido pela operadora, um servidor VPN remoto pode não ser alcançável."
+            statusText.text = "O Lúmen VPN não conseguiu confirmar acesso à internet. Isso não informa se ainda há franquia no chip: o Android não fornece ao app uma verificação universal de saldo/pacote. Sem tráfego permitido pela operadora, um servidor VPN remoto pode não ser alcançável."
         } else if (!connected) {
             statusText.text = "Conexão de rede detectada. Isso não confirma que há franquia disponível nem garante acesso ao servidor VPN. Escolha um servidor ou importe um perfil WireGuard."
         }
@@ -532,7 +532,7 @@ class MainActivity : ComponentActivity() {
                     requestMethod = "GET"
                     connectTimeout = 12000
                     readTimeout = 15000
-                    setRequestProperty("User-Agent", "LivreNet-Android/0.3")
+                    setRequestProperty("User-Agent", "Lúmen VPN-Android/0.3")
                 }
                 val body = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
                 val candidates = body.lineSequence()
@@ -612,14 +612,14 @@ class MainActivity : ComponentActivity() {
                     put("ovpn", server.ovpn)
                 })
             }
-            getSharedPreferences("livrenet_offline", Context.MODE_PRIVATE)
+            getSharedPreferences("lumenvpn_offline", Context.MODE_PRIVATE)
                 .edit().putString("public_openvpn_servers", array.toString()).apply()
         }
     }
 
     private fun loadCachedServers(): List<PublicServer> {
         return runCatching {
-            val raw = getSharedPreferences("livrenet_offline", Context.MODE_PRIVATE)
+            val raw = getSharedPreferences("lumenvpn_offline", Context.MODE_PRIVATE)
                 .getString("public_openvpn_servers", null) ?: return emptyList()
             val array = JSONArray(raw)
             (0 until array.length()).mapNotNull { index ->
@@ -680,7 +680,7 @@ class MainActivity : ComponentActivity() {
             setPadding(dp(18), dp(8), dp(18), dp(8))
         }
         panel.addView(TextView(this).apply {
-            text = "Escolha um servidor para conectar dentro do LivreNet. Se um certificado falhar, volte aqui e tente outro."
+            text = "Escolha um servidor para conectar dentro do Lúmen VPN. Se um certificado falhar, volte aqui e tente outro."
             textSize = 13f
             setTextColor(android.graphics.Color.rgb(157, 178, 199))
             setPadding(0, 0, 0, dp(12))
@@ -754,7 +754,7 @@ class MainActivity : ComponentActivity() {
             setPadding(dp(20), dp(10), dp(20), dp(8))
         }
         panel.addView(TextView(this).apply {
-            text = "O servidor pode estar usando certificado, versão TLS, cifra ou autenticação incompatível. O LivreNet não desativa a validação de certificados. Tente outro servidor público ou atualize a lista."
+            text = "O servidor pode estar usando certificado, versão TLS, cifra ou autenticação incompatível. O Lúmen VPN não desativa a validação de certificados. Tente outro servidor público ou atualize a lista."
             textSize = 14f
             setTextColor(android.graphics.Color.rgb(65, 80, 96))
         })

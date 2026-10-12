@@ -24,6 +24,8 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    sourceSets.getByName("main").jniLibs.srcDirs("app/src/main/jniLibs")
 }
 
 dependencies {

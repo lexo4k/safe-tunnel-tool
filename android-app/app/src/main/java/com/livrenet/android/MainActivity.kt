@@ -467,9 +467,9 @@ class MainActivity : ComponentActivity() {
             statusText.text = when (key) {
                 "OpenVPN" -> "Modo OpenVPN selecionado. Escolha um servidor público ou importe um perfil .ovpn."
                 "WireGuard" -> "Modo WireGuard selecionado. Importe um perfil .conf válido para conectar."
-                "SSH Direct" -> "SSH Direct selecionado. No momento abre somente SOCKS5 local; o encaminhamento TUN completo ainda não está integrado."
-                "SSH + Proxy" -> "SSH + Proxy selecionado. Configure um servidor SSH autorizado para abrir um proxy SOCKS5 local."
-                "SSH + SSL" -> "SSH + SSL selecionado. Exige endpoint que ofereça SSH encapsulado em TLS com certificado válido; ainda não encaminha todo o tráfego Android."
+                "SSH Direct" -> "SSH Direct selecionado. O app inicia o serviço VPN/TUN para encaminhar TCP pelo SSH; UDP/DNS têm limitações do transporte SSH."
+                "SSH + Proxy" -> "SSH + Proxy selecionado. Configure um servidor SSH autorizado; o serviço VPN encaminha TCP pelo SOCKS5 local."
+                "SSH + SSL" -> "SSH + SSL selecionado. Exige endpoint SSH-over-TLS com certificado válido; encaminhamento TUN para TCP, com limitações de UDP/DNS."
                 "SSH + SSL Proxy" -> "SSH + SSL Proxy ainda não tem um motor de proxy TLS separado nem encaminhamento TUN completo."
                 else -> "Esse modo ainda não tem motor integrado."
             }
@@ -504,9 +504,9 @@ class MainActivity : ComponentActivity() {
         }
 
         modeRow("OpenVPN • MOTOR PRINCIPAL", "Servidor público da lista ou perfil .ovpn importado. O app valida o perfil antes de iniciar; certificado e servidor precisam ser compatíveis.", "INTEGRADO", true, "OpenVPN")
-        modeRow("SSH Direct", "Abre SSH/SOCKS5 local. O encaminhamento de todos os pacotes Android ainda não está integrado.", "SOCKS5 LOCAL", true, "SSH Direct")
-        modeRow("SSH + Proxy", "Abre um proxy SOCKS5 local por SSH. Não redireciona automaticamente todo o tráfego Android.", "SOCKS5 LOCAL", true, "SSH + Proxy")
-        modeRow("SSH + SSL", "Encapsula SSH em TLS com validação de certificado do sistema. O servidor precisa oferecer TLS-wrapped SSH.", "TLS + SSH", true, "SSH + SSL")
+        modeRow("SSH Direct", "Serviço Android VPN/TUN + HEV encaminha conexões TCP por SSH. UDP/QUIC e DNS podem falhar.", "TUN • TCP", true, "SSH Direct")
+        modeRow("SSH + Proxy", "Túnel Android TUN para TCP via SOCKS5/SSH. Requer servidor autorizado, senha e known_hosts confiável.", "TUN • TCP", true, "SSH + Proxy")
+        modeRow("SSH + SSL", "TUN para TCP via SSH encapsulado em TLS; endpoint precisa suportar TLS-wrapped SSH e certificado válido.", "TUN • TCP", true, "SSH + SSL")
         modeRow("SSH + SSL Proxy", "Proxy TLS separado ainda não implementado; não inicia uma conexão neste modo.", "PENDENTE", false, "SSH + SSL Proxy")
         modeRow("WireGuard • OPÇÃO ALTERNATIVA", "Motor integrado para perfis WireGuard .conf válidos. Não conecta diretamente aos perfis OpenVPN da lista pública.", "INTEGRADO", true, "WireGuard")
         root.addView(modesCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 12 })

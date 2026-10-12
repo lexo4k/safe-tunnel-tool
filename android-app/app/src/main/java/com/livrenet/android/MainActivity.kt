@@ -88,6 +88,7 @@ class MainActivity : ComponentActivity() {
                 openVpnServiceStarted = false
             } else if (upper.contains("CONNECTING") || upper.contains("RETRY") || lower.contains("iniciando")) {
                 openVpnConnecting = true
+                if (upper.contains("RETRY")) openVpnServiceStarted = true
             }
             if (openVpnConnected && !connectionEnded) return
             runOnUiThread {
@@ -142,6 +143,7 @@ class MainActivity : ComponentActivity() {
             val stream = requireNotNull(contentResolver.openInputStream(uri)) {
                 "Não foi possível abrir o perfil selecionado."
             }
+            connectAttemptId++
             stream.use { config = Config.parse(it) }
             selectedOpenVpnServer = null
             profileText.text = "Perfil WireGuard carregado na memória do app."

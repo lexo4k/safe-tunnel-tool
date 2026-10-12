@@ -1,0 +1,4 @@
+# WireGuard credentials and generated client/server configuration
+.env
+config/
+*.conf

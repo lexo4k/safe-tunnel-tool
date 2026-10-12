@@ -616,14 +616,17 @@ class MainActivity : ComponentActivity() {
                 setPadding(0, dp(5), 0, dp(10))
             })
             val connect = Button(this).apply {
-                text = "Conectar a este servidor"
+                text = "Conectar"
                 isAllCaps = false
                 setTextColor(android.graphics.Color.rgb(7, 17, 31))
                 background = android.graphics.drawable.GradientDrawable().apply {
                     setColor(android.graphics.Color.rgb(34, 211, 197))
                     cornerRadius = dp(11).toFloat()
                 }
+                contentDescription = "Conectar à VPN pelo servidor ${server.country}, IP ${server.ip}"
                 setOnClickListener {
+                    isEnabled = false
+                    text = "Validando perfil…"
                     serverDialog?.dismiss()
                     selectOpenVpnServer(server)
                 }

@@ -1,30 +1,32 @@
 # LivreNet Android
 
-This directory is a separate native Android client for the existing LivreNet web project.
+Native Android companion app for the LivreNet project.
 
-## What is implemented
+## Current functionality (version 0.2.0)
 
-- Native Android screen in Portuguese.
-- Import and parse a WireGuard `.conf` profile using the official WireGuard tunnel library.
-- Android system VPN consent prompt via `VpnService.prepare()`.
-- Real connect/disconnect calls to the WireGuard userspace backend.
-- Profile contents are held in memory for the current app session and are not uploaded by this app.
-- GitHub Actions workflow to build a debug APK.
+- Native Portuguese interface.
+- Manual import and real connect/disconnect for WireGuard `.conf` profiles using the official WireGuard tunnel backend.
+- Android VPN consent prompt via `VpnService.prepare()`.
+- Public server discovery through the VPN Gate public API.
+- Downloads the selected VPN Gate OpenVPN configuration and shares it as an `.ovpn` profile with an installed compatible OpenVPN client.
+- Builds a debug APK through GitHub Actions.
 
-## What is still required before general release
+## Important protocol limitation
 
-This repository does **not** currently operate a VPN gateway and does not contain any pre-provisioned server credentials. A valid WireGuard profile must come from a VPN server that the user owns or is authorized to use. A profile contains sensitive key material; do not commit it to GitHub or share it publicly.
+The app does **not** yet run OpenVPN inside LivreNet. VPN Gate profiles use OpenVPN, while the embedded native tunnel backend currently supports WireGuard only. For a VPN Gate profile, an external compatible OpenVPN client must be installed and selected to import the downloaded profile and connect. The in-app WireGuard connect button cannot connect an OpenVPN profile.
 
-The client cannot make an arbitrary server work by inventing an IP address, public key, or private key. A successful tunnel also depends on the server being online and configured to route traffic and DNS correctly.
+The VPN Gate servers are operated by public volunteers, may be offline or slow, and may change without notice. They are not operated by LivreNet. Do not use public VPN servers for sensitive activity; the server operator may be able to observe some connection metadata or unencrypted traffic. Review the provider's terms and privacy information.
+
+## Server and profile requirements
+
+This repository does not operate a VPN gateway and does not include private server credentials. A valid WireGuard profile must come from a server the user owns or is authorized to use. The app cannot create a working tunnel by inventing an address or cryptographic keys.
+
+The app does not promise free or unlimited mobile data and does not bypass carrier plans or restrictions.
 
 ## Build
 
-The workflow `.github/workflows/android-debug-apk.yml` runs `gradle assembleDebug` from this directory and uploads `app-debug.apk` as a workflow artifact. The debug APK is for testing and is not a Play Store release.
-
-## Device coverage
-
-The WireGuard tunnel library provides native binaries for common Android ABIs. This is an Android application, not a universal binary: iOS, Windows, macOS, and Linux need their own native clients or platform-specific packaging.
+The workflow `.github/workflows/android-debug-apk.yml` runs `gradle assembleDebug` from this directory and uploads `app-debug.apk` as the `livrenet-android-debug` artifact. The debug APK is for testing and is not a Play Store release.
 
 ## Privacy and permissions
 
-Android asks the user to authorize VPN access. This is a required operating-system consent, not a LivreNet account. The app does not promise free or unlimited mobile data and does not bypass carrier plans or restrictions.
+Android asks the user to authorize VPN access when a tunnel is started. The VPN Gate profile is downloaded from the public service and shared through Android's file-sharing mechanism; the profile is stored temporarily in the app cache. Do not commit VPN profiles or private keys to GitHub.

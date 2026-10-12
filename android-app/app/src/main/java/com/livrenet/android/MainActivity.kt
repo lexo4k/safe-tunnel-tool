@@ -272,7 +272,7 @@ class MainActivity : ComponentActivity() {
             layoutParams = LinearLayout.LayoutParams(68, 68).apply { rightMargin = 14 }
         }
         val brandText = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        brandText.addView(label("LIVRENET", 26f, white, true))
+        brandText.addView(label("LÚMEN VPN", 26f, white, true))
         brandText.addView(label("PROTEÇÃO • CONEXÃO GLOBAL", 11f, mint, true))
         brandText.addView(label("Versão ${BuildConfig.VERSION_NAME} • build ${BuildConfig.GIT_SHA}", 11f, muted))
         brandRow.addView(logo)
@@ -417,7 +417,7 @@ class MainActivity : ComponentActivity() {
             12f, muted
         ).apply { setPadding(4, 20, 4, 0) }
         root.addView(note)
-        root.addView(label("LIVRENET  •  CONEXÃO COM TRANSPARÊNCIA", 10f, muted, true).apply {
+        root.addView(label("LÚMEN VPN  •  CONEXÃO COM TRANSPARÊNCIA", 10f, muted, true).apply {
             gravity = Gravity.CENTER
             setPadding(0, 24, 0, 0)
         })
@@ -717,9 +717,10 @@ class MainActivity : ComponentActivity() {
             card.setOnClickListener {
                 selectedOpenVpnServer = server
                 serverDialog?.dismiss()
-                profileText.text = "Selecionado: ${server.country} • ${server.ip}. Use o botão Conectar na tela principal."
-                statusText.text = "Servidor selecionado. Toque em Conectar para iniciar o túnel."
+                profileText.text = "Selecionado: ${server.country} • ${server.ip}. Validando o perfil e iniciando a conexão…"
+                statusText.text = "Servidor selecionado. Preparando o túnel OpenVPN…"
                 refreshConnectButton()
+                selectOpenVpnServer(server)
             }
             list.addView(card, LinearLayout.LayoutParams(-1, -2).apply {
                 bottomMargin = dp(10)

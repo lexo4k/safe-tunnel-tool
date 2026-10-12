@@ -396,21 +396,69 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun selectOpenVpnServer(server: PublicServer) {
-        // Do not launch an external app or Android's file/share resolver on row tap.
-        // This build does not yet contain the OpenVPN native core, so it must not
-        // claim that selecting a server has established a VPN tunnel.
-        statusText.text = "Servidor selecionado: ${server.country} (${server.ip})."
-        profileText.text = "OpenVPN ainda não está integrado ao motor interno desta versão."
-        AlertDialog.Builder(this)
-            .setTitle("Servidor selecionado")
-            .setMessage(
-                "${server.country} • ${server.ip}\n\n" +
-                    "A seleção foi registrada, mas nenhuma VPN foi conectada. " +
-                    "Esta versão ainda não inclui o núcleo OpenVPN nativo; por isso, " +
-                    "o LivreNet não abrirá a tela de compartilhamento nem fingirá que conectou."
-            )
-            .setPositiveButton("Entendi", null)
-            .show()
+        // The app does not bundle an OpenVPN engine yet. Open the selected profile
+        // directly in a known compatible client instead of opening Android's share sheet.
+        statusText.text = "Preparando perfil OpenVPN para ${server.country}…"
+        profileText.text = "Abrindo o cliente OpenVPN instalado, se disponível."
+
+        executor.execute {
+            try {
+                val profileFile = File(cacheDir, "livrenet-${server.ip.replace('.', '-')}.ovpn")
+                profileFile.writeText(server.ovpn, Charsets.UTF_8)
+                val uri = FileProvider.getUriForFile(
+                    this,
+                    "${packageName}.fileprovider",
+                    profileFile
+                )
+                val packages = listOf("de.blinkt.openvpn", "net.openvpn.openvpn")
+                var launched = false
+                var lastError: Exception? = null
+
+                for (clientPackage in packages) {
+                    try {
+                        val intent = Intent(Intent.ACTION_VIEW).apply {
+                            setPackage(clientPackage)
+                            setDataAndType(uri, "application/x-openvpn-profile")
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        runOnUiThread {
+                            try {
+                                startActivity(intent)
+                                statusText.text = "Perfil enviado ao cliente OpenVPN. Confirme a importação/conexão nele."
+                                profileText.text = "${server.country} • ${server.ip} • perfil temporário preparado."
+                            } catch (error: Exception) {
+                                lastError = error
+                            }
+                        }
+                        launched = true
+                        break
+                    } catch (error: Exception) {
+                        lastError = error
+                    }
+                }
+
+                if (!launched) {
+                    runOnUiThread {
+                        AlertDialog.Builder(this)
+                            .setTitle("Cliente OpenVPN não encontrado")
+                            .setMessage(
+                                "O perfil de ${server.country} (${server.ip}) foi preparado, mas o LivreNet ainda não possui o motor OpenVPN interno. " +
+                                    "Não foi encontrado um cliente compatível instalado. Instale um cliente OpenVPN confiável para importar o perfil. " +
+                                    "A conexão não foi iniciada."
+                            )
+                            .setPositiveButton("Entendi", null)
+                            .show()
+                        statusText.text = "Perfil preparado; nenhum cliente OpenVPN compatível foi aberto."
+                        profileText.text = "Nenhuma VPN foi conectada."
+                    }
+                }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    statusText.text = "Não foi possível preparar o perfil OpenVPN: ${error.message ?: "erro desconhecido"}"
+                    profileText.text = "Nenhuma VPN foi conectada."
+                }
+            }
+        }
     }
 
     private fun requestVpnPermission() {

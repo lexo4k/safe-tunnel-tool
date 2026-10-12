@@ -25,7 +25,7 @@ android {
         jvmTarget = "17"
     }
 
-    sourceSets.getByName("main").jniLibs.srcDirs("app/src/main/jniLibs")
+    sourceSets.getByName("main").jniLibs.srcDirs("src/main/jniLibs")
 }
 
 dependencies {

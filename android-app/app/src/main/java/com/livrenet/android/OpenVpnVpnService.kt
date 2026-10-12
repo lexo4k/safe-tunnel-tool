@@ -15,6 +15,7 @@ import java.util.concurrent.Executors
 
 class OpenVpnVpnService : VpnService() {
     private val worker = Executors.newSingleThreadExecutor()
+    @Volatile private var reconnectRequested = false
     private var tunnelBuilder: Builder? = null
     private var detachedTunFd: Int = -1
     private var notificationText = "Preparando o túnel OpenVPN"
@@ -28,7 +29,8 @@ class OpenVpnVpnService : VpnService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> {
-                nativeStop()
+                reconnectRequested = false
+                runCatching { nativeStop() }
                 notificationText = "Desconectando OpenVPN"
                 updateNotification()
                 stopSelf()
@@ -41,23 +43,58 @@ class OpenVpnVpnService : VpnService() {
                     stopSelf()
                     return START_NOT_STICKY
                 }
+                reconnectRequested = true
                 notificationText = "Conectando ao servidor OpenVPN…"
                 updateNotification()
                 worker.execute {
-                    val result = try {
-                        nativeConnect(profile, this)
-                    } catch (error: Throwable) {
-                        "Falha no motor OpenVPN: ${error.message ?: error.javaClass.simpleName}"
+                    var retry = 0
+                    var finalMessage = "OpenVPN desconectado."
+                    while (reconnectRequested) {
+                        finalMessage = try {
+                            nativeConnect(profile, this)
+                        } catch (error: Throwable) {
+                            "Falha no motor OpenVPN: ${error.message ?: error.javaClass.simpleName}"
+                        }
+
+                        if (!reconnectRequested) break
+                        if (isNonRetryableFailure(finalMessage) || retry >= MAX_RECONNECTS) {
+                            publishStatus(finalMessage)
+                            reconnectRequested = false
+                            break
+                        }
+
+                        val waitSeconds = RETRY_DELAYS_SECONDS[retry.coerceAtMost(RETRY_DELAYS_SECONDS.lastIndex)]
+                        retry++
+                        publishStatus("Conexão interrompida. Nova tentativa automática em ${waitSeconds}s ($retry/$MAX_RECONNECTS).")
+                        try {
+                            Thread.sleep(waitSeconds * 1000L)
+                        } catch (_: InterruptedException) {
+                            Thread.currentThread().interrupt()
+                            reconnectRequested = false
+                        }
                     }
-                    publishStatus(result)
-                    stopSelf()
+                    if (!reconnectRequested) {
+                        publishStatus("OpenVPN desconectado ou tentativas automáticas encerradas.")
+                        stopSelf()
+                    }
                 }
             }
         }
         return START_NOT_STICKY
     }
 
+    private fun isNonRetryableFailure(message: String): Boolean {
+        val lower = message.lowercase()
+        return listOf(
+            "unsupportedcertversion", "invalid peer certificate", "certificate verify failed",
+            "certificate verification failed", "tls handshake", "tls error", "handshake failed",
+            "no shared cipher", "authentication failed", "auth_failed", "invalid client certificate",
+            "private key", "unsupported protocol", "erro de perfil", "perfil vazio"
+        ).any { lower.contains(it) }
+    }
+
     override fun onDestroy() {
+        reconnectRequested = false
         runCatching { nativeStop() }
         worker.shutdownNow()
         tunnelBuilder = null
@@ -219,6 +256,8 @@ class OpenVpnVpnService : VpnService() {
 
         private const val CHANNEL_ID = "livrenet_openvpn"
         private const val NOTIFICATION_ID = 4172
+        private const val MAX_RECONNECTS = 3
+        private val RETRY_DELAYS_SECONDS = intArrayOf(2, 5, 10)
 
         @JvmStatic external fun nativeConnect(profile: String, service: OpenVpnVpnService): String
         @JvmStatic external fun nativeStop()

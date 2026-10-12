@@ -47,15 +47,22 @@ class MainActivity : ComponentActivity() {
     @Volatile private var openVpnProfileAfterPermission: String? = null
     @Volatile private var lastServerCandidates: List<PublicServer> = emptyList()
     @Volatile private var lastSelectedServerIp: String? = null
+    @Volatile private var tlsDialogShowing = false
 
     private val openVpnStatusReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val message = intent?.getStringExtra(OpenVpnVpnService.EXTRA_STATUS) ?: return
             if (::statusText.isInitialized) statusText.text = message
-            if (message.contains("UnsupportedCertVersion", ignoreCase = true) ||
-                message.contains("invalid peer certificate", ignoreCase = true)) {
+            val lower = message.lowercase()
+            val tlsOrAuthFailure = listOf(
+                "unsupportedcertversion", "invalid peer certificate", "certificate verify failed",
+                "certificate verification failed", "tls handshake", "tls error",
+                "handshake failed", "no shared cipher", "peer certificate", "authentication failed",
+                "auth_failed", "private key", "unsupported protocol"
+            ).any { lower.contains(it) }
+            if (tlsOrAuthFailure && !tlsDialogShowing) {
                 if (::statusText.isInitialized) {
-                    statusText.text = "Este servidor usa um certificado TLS incompatível com o núcleo OpenVPN. A verificação de segurança foi mantida; tente outro servidor público."
+                    statusText.text = "Falha de compatibilidade TLS, certificado ou autenticação. A validação de segurança foi mantida; tente outro servidor ou perfil."
                 }
                 val alternatives = lastServerCandidates.filter { it.ip != lastSelectedServerIp }
                 if (!isFinishing) showTlsCompatibilityDialog(alternatives)
@@ -340,7 +347,7 @@ class MainActivity : ComponentActivity() {
         root.addView(diagnosticsButton, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 8 })
 
         val note = label(
-            "TRANSPARÊNCIA\nO núcleo OpenVPN 3 roda dentro do LivreNet, sem tela de compartilhar ou cliente externo. O app confirma a rede geral, mas só considera o túnel funcional após a negociação TLS e o estabelecimento do TUN. Servidores públicos podem estar offline, exigir autenticação ou apresentar certificados incompatíveis. A validação TLS não é desativada. WireGuard segue como alternativa para perfis .conf válidos. Nenhum servidor garante internet móvel grátis ou ilimitada.",
+            "SEGURANÇA E COMPATIBILIDADE\nO LivreNet pede a autorização VPN oficial do Android ao conectar pela primeira vez. O motor OpenVPN funciona dentro do app. Se um servidor tiver TLS, certificado, cifra ou autenticação incompatível, o app orienta a trocar de servidor sem desativar a validação de segurança. Perfis guardados podem ser exibidos offline, mas a conexão precisa de uma rede que alcance o servidor. Nenhum servidor garante internet móvel grátis ou ilimitada.",
             12f, muted
         ).apply { setPadding(4, 20, 4, 0) }
         root.addView(note)
@@ -630,6 +637,8 @@ class MainActivity : ComponentActivity() {
     private var serverDialog: AlertDialog? = null
 
     private fun showTlsCompatibilityDialog(alternatives: List<PublicServer>) {
+        if (tlsDialogShowing || isFinishing) return
+        tlsDialogShowing = true
         val density = resources.displayMetrics.density
         fun dp(value: Int) = (value * density).toInt()
         val panel = LinearLayout(this).apply {
@@ -637,13 +646,14 @@ class MainActivity : ComponentActivity() {
             setPadding(dp(20), dp(10), dp(20), dp(8))
         }
         panel.addView(TextView(this).apply {
-            text = "O servidor apresentou um certificado TLS incompatível. A conexão foi bloqueada com segurança. Sua internet móvel foi detectada normalmente."
+            text = "O servidor pode estar usando certificado, versão TLS, cifra ou autenticação incompatível. O LivreNet não desativa a validação de certificados. Tente outro servidor público ou atualize a lista."
             textSize = 14f
             setTextColor(android.graphics.Color.rgb(65, 80, 96))
         })
         val dialog = AlertDialog.Builder(this)
-            .setTitle("Certificado incompatível")
+            .setTitle("Servidor incompatível")
             .setView(panel)
+            .setOnDismissListener { tlsDialogShowing = false }
             .create()
         val choose = Button(this).apply {
             text = if (alternatives.isEmpty()) "Buscar servidores novamente" else "Escolher outro servidor"

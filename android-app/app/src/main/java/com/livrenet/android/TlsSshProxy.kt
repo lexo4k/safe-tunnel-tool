@@ -30,7 +30,9 @@ class TlsSshProxy : Proxy {
             socket.soTimeout = timeout.coerceAtLeast(1000)
             socket.sslParameters = socket.sslParameters.apply {
                 endpointIdentificationAlgorithm = "HTTPS"
-                serverNames = listOf(javax.net.ssl.SNIHostName(host))
+                if (host.any { it.isLetter() } && !host.contains(":")) {
+                    serverNames = listOf(javax.net.ssl.SNIHostName(host))
+                }
             }
             socket.startHandshake()
             tlsSocket = socket

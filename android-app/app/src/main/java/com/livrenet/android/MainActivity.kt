@@ -132,7 +132,7 @@ class MainActivity : ComponentActivity() {
         }
 
         val scroll = android.widget.ScrollView(this).apply {
-            fillViewport = true
+            isFillViewport = true
             setBackgroundColor(ink)
         }
         val root = LinearLayout(this).apply {

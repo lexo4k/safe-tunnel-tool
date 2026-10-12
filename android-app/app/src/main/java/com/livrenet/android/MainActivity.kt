@@ -317,6 +317,13 @@ class MainActivity : ComponentActivity() {
         }
         root.addView(checkInternetButton, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 12 })
 
+        val diagnosticsButton = Button(this).apply {
+            text = "Testar túnel e IP público"
+            styleButton(this)
+            setOnClickListener { runTunnelDiagnostics() }
+        }
+        root.addView(diagnosticsButton, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 8 })
+
         val note = label(
             "TRANSPARÊNCIA\nO núcleo OpenVPN 3 roda dentro do LivreNet, sem tela de compartilhar ou cliente externo. O app confirma a rede geral, mas só considera o túnel funcional após a negociação TLS e o estabelecimento do TUN. Servidores públicos podem estar offline, exigir autenticação ou apresentar certificados incompatíveis. A validação TLS não é desativada. WireGuard segue como alternativa para perfis .conf válidos. Nenhum servidor garante internet móvel grátis ou ilimitada.",
             12f, muted
@@ -333,6 +340,49 @@ class MainActivity : ComponentActivity() {
 
     private fun matchWidth(): LinearLayout.LayoutParams =
         LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT)
+
+    private fun runTunnelDiagnostics() {
+        statusText.text = "Testando acesso HTTPS e consultando o IP público…"
+        executor.execute {
+            var ipConnection: HttpURLConnection? = null
+            var probeConnection: HttpURLConnection? = null
+            try {
+                ipConnection = (URL("https://api.ipify.org").openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = 8000
+                    readTimeout = 8000
+                    setRequestProperty("Cache-Control", "no-cache")
+                }
+                val publicIp = ipConnection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText().trim() }
+                if (!publicIp.matches(Regex("[0-9a-fA-F:.]{3,45}"))) {
+                    throw IllegalStateException("O serviço de IP retornou uma resposta inesperada.")
+                }
+
+                probeConnection = (URL("https://clients3.google.com/generate_204").openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = 8000
+                    readTimeout = 8000
+                    instanceFollowRedirects = false
+                }
+                val code = probeConnection.responseCode
+                val probeOk = code == 204 || (code in 200..299)
+                runOnUiThread {
+                    statusText.text = if (probeOk) {
+                        "Diagnóstico concluído: HTTPS respondeu (HTTP $code). IP público observado: $publicIp. Compare com o IP sem VPN para confirmar a saída pelo túnel."
+                    } else {
+                        "IP público observado: $publicIp. O teste HTTPS respondeu HTTP $code. Verifique o servidor ou tente novamente."
+                    }
+                }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    statusText.text = "Diagnóstico não concluído: ${error.message ?: "falha de rede ou timeout"}. Isso não prova, sozinho, que o túnel caiu."
+                }
+            } finally {
+                ipConnection?.disconnect()
+                probeConnection?.disconnect()
+            }
+        }
+    }
 
     private fun refreshInternetStatus() {
         val manager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager

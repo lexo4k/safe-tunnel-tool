@@ -50,6 +50,8 @@ class MainActivity : ComponentActivity() {
     @Volatile private var tlsDialogShowing = false
     @Volatile private var openVpnConnected = false
     @Volatile private var openVpnConnecting = false
+    @Volatile private var openVpnServiceStarted = false
+    @Volatile private var connectAttemptId = 0
     @Volatile private var selectedOpenVpnServer: PublicServer? = null
 
     private val openVpnStatusReceiver = object : BroadcastReceiver() {
@@ -77,6 +79,7 @@ class MainActivity : ComponentActivity() {
             if (connectionEnded) {
                 openVpnConnected = false
                 openVpnConnecting = false
+                openVpnServiceStarted = false
             } else if (upper.contains("CONNECTING") || upper.contains("RETRY") || lower.contains("iniciando")) {
                 openVpnConnecting = true
             }
@@ -134,6 +137,7 @@ class MainActivity : ComponentActivity() {
                 "Não foi possível abrir o perfil selecionado."
             }
             stream.use { config = Config.parse(it) }
+            selectedOpenVpnServer = null
             profileText.text = "Perfil WireGuard carregado na memória do app."
             statusText.text = "Perfil pronto. Toque em Conectar WireGuard."
             connectButton.isEnabled = true
@@ -152,6 +156,7 @@ class MainActivity : ComponentActivity() {
             if (pendingOpenVpnProfile != null) {
                 openVpnProfileAfterPermission = null
                 openVpnConnecting = true
+                openVpnServiceStarted = true
                 refreshConnectButton()
                 statusText.text = "Permissão concedida. Iniciando o núcleo OpenVPN 3…"
                 profileText.text = "Conectando diretamente pelo serviço VPN do LivreNet."
@@ -163,7 +168,9 @@ class MainActivity : ComponentActivity() {
         } else {
             openVpnProfileAfterPermission = null
             connectAfterPermission = false
+            connectAttemptId++
             openVpnConnecting = false
+            openVpnServiceStarted = false
             statusText.text = "Permissão VPN não concedida. Nenhum túnel foi iniciado."
             refreshConnectButton()
         }
@@ -308,9 +315,12 @@ class MainActivity : ComponentActivity() {
             setOnClickListener {
                 when {
                     openVpnConnected || openVpnConnecting -> {
-                        OpenVpnVpnService.disconnect(this@MainActivity)
+                        connectAttemptId++
+                        val shouldStopService = openVpnServiceStarted || openVpnConnected
                         openVpnConnected = false
                         openVpnConnecting = false
+                        openVpnServiceStarted = false
+                        if (shouldStopService) OpenVpnVpnService.disconnect(this@MainActivity)
                         statusText.text = "Cancelando conexão e encerrando o túnel…"
                         refreshConnectButton()
                     }
@@ -762,14 +772,20 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun selectOpenVpnServer(server: PublicServer) {
+        val attemptId = ++connectAttemptId
         lastSelectedServerIp = server.ip
+        openVpnConnecting = true
+        refreshConnectButton()
         statusText.text = "Validando o perfil com o núcleo OpenVPN 3…"
         profileText.text = "${server.country} • ${server.ip} • verificando configuração antes de conectar."
 
         executor.execute {
             val validation = OpenVpnNative.validateProfileOrMessage(server.ovpn)
             runOnUiThread {
+                if (attemptId != connectAttemptId) return@runOnUiThread
                 if (!validation.startsWith("OK:")) {
+                    openVpnConnecting = false
+                    refreshConnectButton()
                     statusText.text = validation
                     profileText.text = "Perfil não iniciado. Verifique a configuração ou tente outro servidor."
                     AlertDialog.Builder(this)
@@ -792,6 +808,7 @@ class MainActivity : ComponentActivity() {
                     openVpnProfileAfterPermission = null
                     statusText.text = "Permissão já concedida. Iniciando o túnel OpenVPN…"
                     openVpnConnecting = true
+                    openVpnServiceStarted = true
                     refreshConnectButton()
                     OpenVpnVpnService.connect(this, server.ovpn)
                 } else {

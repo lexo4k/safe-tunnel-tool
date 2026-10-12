@@ -301,7 +301,7 @@ class MainActivity : ComponentActivity() {
             caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "Rede: Ethernet"
             else -> "Rede: conexão ativa"
         }
-        internetText.text = "$transport\\n" + if (hasInternet) {
+        internetText.text = "$transport\n" + if (hasInternet) {
             "Acesso geral à internet confirmado"
         } else {
             "Acesso à internet não confirmado"
@@ -388,14 +388,14 @@ class MainActivity : ComponentActivity() {
         }.toTypedArray()
         AlertDialog.Builder(this)
             .setTitle("Escolha um servidor público")
-            .setItems(labels) { _, which -> shareOpenVpnProfile(servers[which]) }
+            .setItems(labels) { _, which -> openOpenVpnProfile(servers[which]) }
             .setNegativeButton("Cancelar", null)
             .show()
-        statusText.text = "${servers.size} opções encontradas. Selecione uma para preparar o perfil."
+        statusText.text = "${servers.size} servidores OpenVPN encontrados. Toque em um para abrir no cliente OpenVPN instalado."
         profileText.text = "A lista é pública e pode conter servidores indisponíveis."
     }
 
-    private fun shareOpenVpnProfile(server: PublicServer) {
+    private fun openOpenVpnProfile(server: PublicServer) {
         try {
             val profileFile = File(cacheDir, "livrenet-${server.ip.replace('.', '-')}.ovpn")
             profileFile.writeText(server.ovpn, Charsets.UTF_8)
@@ -404,20 +404,20 @@ class MainActivity : ComponentActivity() {
                 setDataAndType(profileUri, "application/x-openvpn-profile")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            statusText.text = "Perfil de ${server.country} preparado. Selecione um cliente OpenVPN compatível para importar e conectar."
-            profileText.text = "Servidor escolhido: ${server.ip}. O túnel OpenVPN ainda não é executado dentro do LivreNet."
+            statusText.text = "Abrindo o servidor ${server.country} no cliente OpenVPN…"
+            profileText.text = "Servidor selecionado: ${server.ip}. O cliente externo precisa importar o perfil e iniciar o túnel."
             try {
                 startActivity(openIntent)
             } catch (_: android.content.ActivityNotFoundException) {
-                val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                    type = "application/x-openvpn-profile"
-                    putExtra(Intent.EXTRA_STREAM, profileUri)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-                startActivity(Intent.createChooser(shareIntent, "Importar perfil OpenVPN"))
+                statusText.text = "Nenhum cliente OpenVPN compatível foi encontrado."
+                AlertDialog.Builder(this)
+                    .setTitle("Cliente OpenVPN necessário")
+                    .setMessage("O servidor escolhido usa OpenVPN, mas o LivreNet ainda não tem o motor OpenVPN integrado. Instale um cliente OpenVPN compatível e toque novamente no servidor. O app não vai abrir mais a tela de compartilhar arquivo.")
+                    .setPositiveButton("Entendi", null)
+                    .show()
             }
         } catch (error: Exception) {
-            statusText.text = "Não foi possível compartilhar o perfil: ${error.message ?: "erro desconhecido"}"
+            statusText.text = "Não foi possível abrir o perfil OpenVPN: ${error.message ?: "erro desconhecido"}"
         }
     }
 

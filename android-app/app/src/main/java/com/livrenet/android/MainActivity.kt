@@ -62,7 +62,13 @@ class MainActivity : ComponentActivity() {
             val connectionEstablished =
                 (upper.contains("CONNECTED") || upper.contains("CONNECTION_ESTABLISHED") || upper.contains("TUNNEL UP")) &&
                     listOf("DISCONNECTED", "NOT CONNECTED", "CONNECTING", "UNCONNECTED").none { upper.contains(it) }
-            val connectionEnded = listOf("DISCONNECTED", "CONNECTION FAILED", "AUTHENTICATION FAILED", "TLS ERROR", "ERRO:", "FALHA").any { upper.contains(it) }
+            val connectionEnded = listOf(
+                "DISCONNECTED", "DESCONECTADO", "DESCONECTANDO", "CONNECTION FAILED",
+                "CONNECTION CANCELED", "CONNECTION CANCELLED", "AUTHENTICATION FAILED",
+                "TLS ERROR", "TUNNEL CLOSED", "SOCKET CLOSED", "NETWORK UNREACHABLE",
+                "CONNECTION TIMEOUT", "TIMEOUT", "STOPPED", "CANCELADO", "CANCELANDO",
+                "ERRO:", "FALHA"
+            ).any { upper.contains(it) }
 
             if (connectionEstablished) {
                 openVpnConnected = true
@@ -139,9 +145,8 @@ class MainActivity : ComponentActivity() {
             stream.use { config = Config.parse(it) }
             selectedOpenVpnServer = null
             profileText.text = "Perfil WireGuard carregado na memória do app."
-            statusText.text = "Perfil pronto. Toque em Conectar WireGuard."
-            connectButton.isEnabled = true
-            connectButton.text = "Conectar WireGuard"
+            statusText.text = "Perfil pronto. Toque em Conectar."
+            refreshConnectButton()
         } catch (error: Exception) {
             config = null
             profileText.text = "Nenhum perfil WireGuard válido carregado."

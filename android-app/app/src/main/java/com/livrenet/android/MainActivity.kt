@@ -49,6 +49,7 @@ class MainActivity : ComponentActivity() {
     @Volatile private var lastSelectedServerIp: String? = null
     @Volatile private var tlsDialogShowing = false
     @Volatile private var openVpnConnected = false
+    @Volatile private var openVpnConnecting = false
     @Volatile private var selectedOpenVpnServer: PublicServer? = null
 
     private val openVpnStatusReceiver = object : BroadcastReceiver() {
@@ -63,6 +64,7 @@ class MainActivity : ComponentActivity() {
 
             if (connectionEstablished) {
                 openVpnConnected = true
+                openVpnConnecting = false
                 runOnUiThread {
                     statusText.setTextColor(android.graphics.Color.rgb(74, 222, 128))
                     statusText.text = "✓ VPN conectada. O núcleo confirmou a conexão."
@@ -72,7 +74,12 @@ class MainActivity : ComponentActivity() {
                 }
                 return
             }
-            if (connectionEnded) openVpnConnected = false
+            if (connectionEnded) {
+                openVpnConnected = false
+                openVpnConnecting = false
+            } else if (upper.contains("CONNECTING") || upper.contains("RETRY") || lower.contains("iniciando")) {
+                openVpnConnecting = true
+            }
             if (openVpnConnected && !connectionEnded) return
             runOnUiThread {
                 statusText.setTextColor(
@@ -144,6 +151,8 @@ class MainActivity : ComponentActivity() {
         if (result.resultCode == Activity.RESULT_OK) {
             if (pendingOpenVpnProfile != null) {
                 openVpnProfileAfterPermission = null
+                openVpnConnecting = true
+                refreshConnectButton()
                 statusText.text = "Permissão concedida. Iniciando o núcleo OpenVPN 3…"
                 profileText.text = "Conectando diretamente pelo serviço VPN do LivreNet."
                 OpenVpnVpnService.connect(this, pendingOpenVpnProfile)
@@ -154,7 +163,9 @@ class MainActivity : ComponentActivity() {
         } else {
             openVpnProfileAfterPermission = null
             connectAfterPermission = false
+            openVpnConnecting = false
             statusText.text = "Permissão VPN não concedida. Nenhum túnel foi iniciado."
+            refreshConnectButton()
         }
     }
 
@@ -296,10 +307,11 @@ class MainActivity : ComponentActivity() {
             styleButton(this, true)
             setOnClickListener {
                 when {
-                    openVpnConnected -> {
+                    openVpnConnected || openVpnConnecting -> {
                         OpenVpnVpnService.disconnect(this@MainActivity)
                         openVpnConnected = false
-                        statusText.text = "Solicitando desconexão segura…"
+                        openVpnConnecting = false
+                        statusText.text = "Cancelando conexão e encerrando o túnel…"
                         refreshConnectButton()
                     }
                     connected -> disconnectTunnel()
@@ -769,6 +781,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 openVpnConnected = false
+                openVpnConnecting = true
                 refreshConnectButton()
                 statusText.setTextColor(android.graphics.Color.rgb(157, 178, 199))
                 statusText.text = "Perfil válido. Solicitando a permissão VPN do Android…"
@@ -778,6 +791,8 @@ class MainActivity : ComponentActivity() {
                 if (permissionIntent == null) {
                     openVpnProfileAfterPermission = null
                     statusText.text = "Permissão já concedida. Iniciando o túnel OpenVPN…"
+                    openVpnConnecting = true
+                    refreshConnectButton()
                     OpenVpnVpnService.connect(this, server.ovpn)
                 } else {
                     vpnPermission.launch(permissionIntent)
@@ -849,11 +864,18 @@ class MainActivity : ComponentActivity() {
 
     private fun refreshConnectButton() {
         if (!::connectButton.isInitialized) return
-        val anyConnected = connected || openVpnConnected
-        connectButton.text = if (anyConnected) "Desconectar" else "Conectar"
-        connectButton.isEnabled = anyConnected || selectedOpenVpnServer != null || config != null
-        connectButton.contentDescription = if (anyConnected) "Desconectar a VPN"
-            else selectedOpenVpnServer?.let { "Conectar ao servidor ${it.country}" } ?: "Conectar à VPN"
+        val active = connected || openVpnConnected
+        connectButton.text = when {
+            active -> "Desconectar"
+            openVpnConnecting -> "Cancelar conexão"
+            else -> "Conectar"
+        }
+        connectButton.isEnabled = active || openVpnConnecting || selectedOpenVpnServer != null || config != null
+        connectButton.contentDescription = when {
+            active -> "Desconectar a VPN"
+            openVpnConnecting -> "Cancelar tentativa de conexão VPN"
+            else -> selectedOpenVpnServer?.let { "Conectar ao servidor ${it.country}" } ?: "Conectar à VPN"
+        }
     }
 
     private fun renderState() {

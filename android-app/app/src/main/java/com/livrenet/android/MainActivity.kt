@@ -203,16 +203,37 @@ class MainActivity : ComponentActivity() {
 
         val modesCard = card()
         modesCard.addView(label("MODOS DE CONEXÃO", 12f, mint, true))
-        modesCard.addView(label("WireGuard • disponível com perfil válido", 14f, white, true).apply {
-            setPadding(0, 10, 0, 4)
+        modesCard.addView(label("Escolha a tecnologia para sua conexão", 14f, white, true).apply {
+            setPadding(0, 6, 0, 12)
         })
-        modesCard.addView(label("OpenVPN • perfis públicos podem ser importados em um cliente externo. Motor integrado ainda não incluído.", 13f, muted).apply {
-            setPadding(0, 2, 0, 8)
-        })
-        modesCard.addView(label("SSH Direct • SSH + Proxy • SSH + SSL • SSH + SSL Proxy", 14f, white, true))
-        modesCard.addView(label("Esses quatro modos SSH ainda não estão implementados: precisam de transporte SSH/TLS real e de um servidor autorizado. Não serão apresentados como conectados sem um motor funcional.", 13f, muted).apply {
-            setPadding(0, 6, 0, 0)
-        })
+
+        fun modeRow(title: String, description: String, state: String, available: Boolean) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(14, 12, 14, 12)
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    setColor(android.graphics.Color.rgb(19, 39, 58))
+                    cornerRadius = 16f
+                    setStroke(1, if (available) mint else android.graphics.Color.rgb(50, 76, 99))
+                }
+            }
+            val heading = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            heading.addView(label(title, 15f, white, true), LinearLayout.LayoutParams(0, -2, 1f))
+            heading.addView(label(state, 10f, if (available) mint else muted, true))
+            row.addView(heading)
+            row.addView(label(description, 12f, muted).apply { setPadding(0, 5, 0, 0) })
+            modesCard.addView(row, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 8 })
+        }
+
+        modeRow("WireGuard", "Túnel criptografado. Requer importar um perfil válido e ter um servidor acessível.", "COM PERFIL", true)
+        modeRow("OpenVPN", "A busca de perfis públicos prepara um arquivo para um cliente externo; o motor ainda não está integrado.", "EXTERNO", false)
+        modeRow("SSH Direct", "Ainda precisa de motor SSH e servidor autorizado.", "EM DESENVOLVIMENTO", false)
+        modeRow("SSH + Proxy", "Ainda precisa de motor SSH/Proxy e servidor autorizado.", "EM DESENVOLVIMENTO", false)
+        modeRow("SSH + SSL", "Ainda precisa de transporte TLS/SSH e servidor autorizado.", "EM DESENVOLVIMENTO", false)
+        modeRow("SSH + SSL Proxy", "Ainda precisa de transporte TLS/SSH, proxy e servidor autorizado.", "EM DESENVOLVIMENTO", false)
         root.addView(modesCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 12 })
 
         val wireguardCard = card().apply {

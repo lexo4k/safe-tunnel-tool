@@ -694,15 +694,25 @@ class MainActivity : ComponentActivity() {
 
                 openVpnProfileAfterPermission = server.ovpn
                 profileText.text = "${server.country} • ${server.ip} • perfil validado pelo OpenVPN 3 Core."
-                statusText.text = "Perfil validado. Solicitando autorização VPN do Android…"
-                val permissionIntent = VpnService.prepare(this)
-                if (permissionIntent == null) {
-                    openVpnProfileAfterPermission = null
-                    statusText.text = "Iniciando o túnel OpenVPN dentro do LivreNet…"
-                    OpenVpnVpnService.connect(this, server.ovpn)
-                } else {
-                    vpnPermission.launch(permissionIntent)
-                }
+                AlertDialog.Builder(this)
+                    .setTitle("Autorizar o túnel VPN")
+                    .setMessage("O Android vai pedir permissão para o LivreNet criar uma conexão VPN e encaminhar o tráfego de rede pelo servidor selecionado. O app não consegue ler senhas do aparelho nem conceder essa autorização sozinho.")
+                    .setNegativeButton("Cancelar") { _, _ ->
+                        openVpnProfileAfterPermission = null
+                        statusText.text = "Conexão cancelada. Nenhuma VPN foi iniciada."
+                    }
+                    .setPositiveButton("Continuar") { _, _ ->
+                        statusText.text = "Solicitando autorização oficial do Android…"
+                        val permissionIntent = VpnService.prepare(this)
+                        if (permissionIntent == null) {
+                            openVpnProfileAfterPermission = null
+                            statusText.text = "Iniciando o túnel OpenVPN dentro do LivreNet…"
+                            OpenVpnVpnService.connect(this, server.ovpn)
+                        } else {
+                            vpnPermission.launch(permissionIntent)
+                        }
+                    }
+                    .show()
             }
         }
     }

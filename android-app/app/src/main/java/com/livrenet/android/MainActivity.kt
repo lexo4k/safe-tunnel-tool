@@ -421,10 +421,10 @@ class MainActivity : ComponentActivity() {
             statusText.text = when (key) {
                 "OpenVPN" -> "Modo OpenVPN selecionado. Escolha um servidor público ou importe um perfil .ovpn."
                 "WireGuard" -> "Modo WireGuard selecionado. Importe um perfil .conf válido para conectar."
-                "SSH Direct" -> "SSH Direct selecionado. No momento abre somente SOCKS5 local; o encaminhamento TUN completo ainda não está integrado.",
-                "SSH + Proxy" -> "SSH + Proxy selecionado. Configure um servidor SSH autorizado para abrir um proxy SOCKS5 local.",
-                "SSH + SSL" -> "SSH + SSL selecionado. Exige endpoint que ofereça SSH encapsulado em TLS com certificado válido; ainda não encaminha todo o tráfego Android.",
-                "SSH + SSL Proxy" -> "SSH + SSL Proxy ainda não tem um motor de proxy TLS separado nem encaminhamento TUN completo.",
+                "SSH Direct" -> "SSH Direct selecionado. No momento abre somente SOCKS5 local; o encaminhamento TUN completo ainda não está integrado."
+                "SSH + Proxy" -> "SSH + Proxy selecionado. Configure um servidor SSH autorizado para abrir um proxy SOCKS5 local."
+                "SSH + SSL" -> "SSH + SSL selecionado. Exige endpoint que ofereça SSH encapsulado em TLS com certificado válido; ainda não encaminha todo o tráfego Android."
+                "SSH + SSL Proxy" -> "SSH + SSL Proxy ainda não tem um motor de proxy TLS separado nem encaminhamento TUN completo."
                 else -> "Esse modo ainda não tem motor integrado."
             }
             refreshConnectButton()
@@ -1042,18 +1042,18 @@ class MainActivity : ComponentActivity() {
 
 
     private fun showSshProxyDialog() {
-        val hostInput = EditText(this).apply { hint = "Host do servidor SSH"; singleLine = true }
+        val hostInput = EditText(this).apply { hint = "Host do servidor SSH"; setSingleLine(true) }
         val portInput = EditText(this).apply {
             hint = "Porta SSH (22)"
             inputType = InputType.TYPE_CLASS_NUMBER
             setText("22")
-            singleLine = true
+            setSingleLine(true)
         }
-        val userInput = EditText(this).apply { hint = "Usuário SSH"; singleLine = true }
+        val userInput = EditText(this).apply { hint = "Usuário SSH"; setSingleLine(true) }
         val passwordInput = EditText(this).apply {
             hint = "Senha SSH"
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-            singleLine = true
+            setSingleLine(true)
         }
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL

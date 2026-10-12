@@ -221,18 +221,18 @@ class MainActivity : ComponentActivity() {
 
         val hero = card().apply {
             setPadding(20, 20, 20, 20)
-            val eyebrow = label("SUA CONEXÃO, SOB SEU CONTROLE", 11f, mint, true)
+            val eyebrow = label("VPN COM TRANSPARÊNCIA", 11f, mint, true)
             addView(eyebrow)
-            val headline = label("O mundo mais perto.", 25f, white, true).apply {
+            val headline = label("Conecte. Verifique. Navegue.", 24f, white, true).apply {
                 setPadding(0, 8, 0, 6)
             }
             addView(headline)
-            addView(label("Consulte a internet, explore servidores públicos e gerencie seu perfil VPN em um só lugar.", 14f, muted))
+            addView(label("Uma experiência simples, com diagnóstico de conexão e estado da rede sem indicadores inventados.", 14f, muted))
         }
         root.addView(hero, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 22 })
 
         val networkCard = card()
-        networkCard.addView(label("ESTADO DA REDE", 11f, muted, true))
+        networkCard.addView(label("ESTADO DA REDE E DO TÚNEL", 11f, muted, true))
         internetText = label("Verificando internet…", 16f, white, true).apply {
             setPadding(0, 8, 0, 2)
         }
@@ -554,6 +554,9 @@ class MainActivity : ComponentActivity() {
                 if (ip.isBlank() || ovpn.isBlank() || !ovpn.contains("remote ")) null
                 else PublicServer(host, ip, country, item.optLong("speed", 0L), ovpn)
             }
+                .distinctBy { it.ip }
+                .sortedByDescending { it.speed }
+                .take(20)
         }.getOrDefault(emptyList())
     }
 

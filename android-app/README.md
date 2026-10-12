@@ -2,12 +2,12 @@
 
 Native Android companion app for the LivreNet project.
 
-## Current functionality (version 0.2.0)
+## Current functionality (version 0.3.0)
 
-- Native Portuguese interface.
+- Native Portuguese interface with a dark navy / turquoise visual identity, responsive scrolling layout, and globe-inspired LivreNet branding.
 - Manual import and real connect/disconnect for WireGuard `.conf` profiles using the official WireGuard tunnel backend.
 - Android VPN consent prompt via `VpnService.prepare()`.
-- Public server discovery through the VPN Gate public API.
+- Public server discovery through the VPN Gate public API, with country/IP labels and advertised speed ordering.
 - Downloads the selected VPN Gate OpenVPN configuration and shares it as an `.ovpn` profile with an installed compatible OpenVPN client.
 - Builds a debug APK through GitHub Actions.
 

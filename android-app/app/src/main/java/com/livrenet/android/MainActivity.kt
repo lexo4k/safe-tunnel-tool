@@ -273,15 +273,22 @@ class MainActivity : ComponentActivity() {
         val caps = network?.let { manager.getNetworkCapabilities(it) }
         val hasInternet = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true &&
             caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-        internetText.text = if (hasInternet) {
-            "Internet de base: disponível"
+        val transport = when {
+            caps == null -> "Rede: nenhuma conexão ativa detectada"
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "Rede: Wi-Fi"
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "Rede: dados móveis"
+            caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "Rede: Ethernet"
+            else -> "Rede: conexão ativa"
+        }
+        internetText.text = "$transport\\n" + if (hasInternet) {
+            "Acesso geral à internet confirmado"
         } else {
-            "Internet de base: sem acesso confirmado"
+            "Acesso à internet não confirmado"
         }
         if (!hasInternet) {
-            statusText.text = "Sem internet de base. As configurações salvas continuam disponíveis, mas a busca e a conexão com servidores remotos podem falhar."
+            statusText.text = "O LivreNet não conseguiu confirmar acesso à internet. Isso não informa se ainda há franquia no chip: o Android não fornece ao app uma verificação universal de saldo/pacote. Sem tráfego permitido pela operadora, um servidor VPN remoto pode não ser alcançável."
         } else if (!connected) {
-            statusText.text = "Internet disponível. Escolha um servidor ou importe um perfil WireGuard."
+            statusText.text = "Conexão de rede detectada. Isso não confirma que há franquia disponível nem garante acesso ao servidor VPN. Escolha um servidor ou importe um perfil WireGuard."
         }
     }
 

@@ -71,7 +71,7 @@ class OpenVpnVpnService : VpnService() {
 
                         val waitSeconds = RETRY_DELAYS_SECONDS[retry.coerceAtMost(RETRY_DELAYS_SECONDS.lastIndex)]
                         retry++
-                        publishStatus("Conexão interrompida. Nova tentativa automática em ${waitSeconds}s ($retry/$MAX_RECONNECTS).")
+                        publishStatus("[RETRYING] Conexão interrompida. Nova tentativa automática em ${waitSeconds}s ($retry/$MAX_RECONNECTS).")
                         try {
                             Thread.sleep(waitSeconds * 1000L)
                         } catch (_: InterruptedException) {

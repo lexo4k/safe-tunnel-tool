@@ -29,6 +29,8 @@ import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.Executors
+import org.json.JSONArray
+import org.json.JSONObject
 
 class MainActivity : ComponentActivity() {
     private lateinit var statusText: TextView
@@ -137,7 +139,11 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         backend = GoBackend(applicationContext)
         buildScreen()
+        lastServerCandidates = loadCachedServers()
         refreshInternetStatus()
+        if (lastServerCandidates.isNotEmpty()) {
+            statusText.text = "${lastServerCandidates.size} perfis OpenVPN salvos neste aparelho. Se estiver sem internet, tente abrir a lista salva; a conexão ainda precisa alcançar um servidor."
+        }
         renderState()
     }
 
@@ -466,6 +472,7 @@ class MainActivity : ComponentActivity() {
                     .take(20)
                     .toList()
 
+                if (candidates.isNotEmpty()) saveCachedServers(candidates)
                 runOnUiThread {
                     freeVpnButton.isEnabled = true
                     if (candidates.isEmpty()) {
@@ -477,15 +484,57 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             } catch (error: Exception) {
+                val cached = loadCachedServers()
                 runOnUiThread {
                     freeVpnButton.isEnabled = true
-                    statusText.text = "Falha ao buscar servidores: ${error.message ?: "verifique a internet e tente novamente"}"
-                    profileText.text = "Nenhuma conexão VPN foi iniciada."
+                    if (cached.isNotEmpty()) {
+                        lastServerCandidates = cached
+                        statusText.text = "Sem acesso à lista online. Mostrando ${cached.size} perfis salvos. A conexão só funcionará se houver uma rede que alcance o servidor."
+                        profileText.text = "Lista offline do aparelho. Perfis públicos podem ter expirado ou estar indisponíveis."
+                        showServerPicker(cached)
+                    } else {
+                        statusText.text = "Falha ao buscar servidores: ${error.message ?: "verifique a internet e tente novamente"}. Nenhum perfil offline foi salvo."
+                        profileText.text = "Nenhuma conexão VPN foi iniciada."
+                    }
                 }
             } finally {
                 connection?.disconnect()
             }
         }
+    }
+
+    private fun saveCachedServers(servers: List<PublicServer>) {
+        runCatching {
+            val array = JSONArray()
+            servers.take(20).forEach { server ->
+                array.put(JSONObject().apply {
+                    put("host", server.host)
+                    put("ip", server.ip)
+                    put("country", server.country)
+                    put("speed", server.speed)
+                    put("ovpn", server.ovpn)
+                })
+            }
+            getSharedPreferences("livrenet_offline", Context.MODE_PRIVATE)
+                .edit().putString("public_openvpn_servers", array.toString()).apply()
+        }
+    }
+
+    private fun loadCachedServers(): List<PublicServer> {
+        return runCatching {
+            val raw = getSharedPreferences("livrenet_offline", Context.MODE_PRIVATE)
+                .getString("public_openvpn_servers", null) ?: return emptyList()
+            val array = JSONArray(raw)
+            (0 until array.length()).mapNotNull { index ->
+                val item = array.optJSONObject(index) ?: return@mapNotNull null
+                val host = item.optString("host")
+                val ip = item.optString("ip")
+                val country = item.optString("country", "País desconhecido")
+                val ovpn = item.optString("ovpn")
+                if (ip.isBlank() || ovpn.isBlank() || !ovpn.contains("remote ")) null
+                else PublicServer(host, ip, country, item.optLong("speed", 0L), ovpn)
+            }
+        }.getOrDefault(emptyList())
     }
 
     private fun showServerPicker(servers: List<PublicServer>) {

@@ -12,7 +12,7 @@ class SshSocksProxy {
     val localPort: Int = 10808
 
     @Synchronized
-    fun connect(host: String, port: Int, username: String, password: String, knownHostsPath: String) {
+    fun connect(host: String, port: Int, username: String, password: String, knownHostsPath: String, tlsWrapped: Boolean = false) {
         close()
         val jsch = JSch()
         jsch.setKnownHosts(knownHostsPath)
@@ -26,6 +26,7 @@ class SshSocksProxy {
             setProperty("ServerAliveCountMax", "3")
         }
         newSession.setConfig(options)
+        if (tlsWrapped) newSession.setProxy(TlsSshProxy())
         newSession.connect(15000)
         try {
             newSession.setPortForwardingD(localPort)

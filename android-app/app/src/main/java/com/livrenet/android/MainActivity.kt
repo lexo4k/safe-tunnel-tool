@@ -43,11 +43,28 @@ class MainActivity : ComponentActivity() {
     @Volatile private var connected = false
     @Volatile private var connectAfterPermission = false
     @Volatile private var openVpnProfileAfterPermission: String? = null
+    @Volatile private var lastServerCandidates: List<PublicServer> = emptyList()
+    @Volatile private var lastSelectedServerIp: String? = null
 
     private val openVpnStatusReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val message = intent?.getStringExtra(OpenVpnVpnService.EXTRA_STATUS) ?: return
             if (::statusText.isInitialized) statusText.text = message
+            if (message.contains("UnsupportedCertVersion", ignoreCase = true) ||
+                message.contains("invalid peer certificate", ignoreCase = true)) {
+                if (::statusText.isInitialized) {
+                    statusText.text = "Este servidor usa um certificado TLS incompatível com o núcleo OpenVPN. A verificação de segurança foi mantida; tente outro servidor público."
+                }
+                val alternatives = lastServerCandidates.filter { it.ip != lastSelectedServerIp }
+                if (alternatives.isNotEmpty() && !isFinishing) {
+                    AlertDialog.Builder(this@MainActivity)
+                        .setTitle("Certificado do servidor incompatível")
+                        .setMessage("A conexão foi recusada com segurança. Isso é incompatibilidade do certificado do servidor escolhido, não falta de internet. Selecione outro servidor.")
+                        .setPositiveButton("Escolher outro servidor") { _, _ -> showServerPicker(alternatives) }
+                        .setNegativeButton("Fechar", null)
+                        .show()
+                }
+            }
         }
     }
 
@@ -264,7 +281,7 @@ class MainActivity : ComponentActivity() {
             modesCard.addView(row, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 8 })
         }
 
-        modeRow("OpenVPN • MOTOR PRINCIPAL SOLICITADO", "Os servidores públicos encontrados usam perfis OpenVPN. O app prepara o perfil e tenta abri-lo diretamente no cliente compatível; o núcleo OpenVPN interno ainda não foi integrado.", "INTEGRAÇÃO PENDENTE", false)
+        modeRow("OpenVPN • MOTOR PRINCIPAL", "Núcleo OpenVPN 3 integrado ao app. Certificados ou servidores públicos incompatíveis podem ser recusados com segurança; escolha outro servidor se isso ocorrer.", "INTEGRADO", true)
         modeRow("SSH Direct", "Ainda precisa de motor SSH e servidor autorizado.", "EM DESENVOLVIMENTO", false)
         modeRow("SSH + Proxy", "Ainda precisa de motor SSH/Proxy e servidor autorizado.", "EM DESENVOLVIMENTO", false)
         modeRow("SSH + SSL", "Ainda precisa de transporte TLS/SSH e servidor autorizado.", "EM DESENVOLVIMENTO", false)
@@ -308,7 +325,7 @@ class MainActivity : ComponentActivity() {
         root.addView(checkInternetButton, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 12 })
 
         val note = label(
-            "TRANSPARÊNCIA\nO fluxo principal solicitado é OpenVPN. Nesta versão, o núcleo OpenVPN ainda não está embutido: ao escolher servidor, o LivreNet prepara o perfil e tenta abrir um cliente compatível, sem usar a tela genérica de compartilhar. A conexão ainda precisa ser confirmada no cliente externo. WireGuard fica como alternativa integrada para perfis .conf válidos. Servidores públicos podem falhar e não garantem internet grátis ou ilimitada.",
+            "TRANSPARÊNCIA\nO núcleo OpenVPN 3 roda dentro do LivreNet, sem tela de compartilhar ou cliente externo. O app confirma a rede geral, mas só considera o túnel funcional após a negociação TLS e o estabelecimento do TUN. Servidores públicos podem estar offline, exigir autenticação ou apresentar certificados incompatíveis. A validação TLS não é desativada. WireGuard segue como alternativa para perfis .conf válidos. Nenhum servidor garante internet móvel grátis ou ilimitada.",
             12f, muted
         ).apply { setPadding(4, 20, 4, 0) }
         root.addView(note)
@@ -403,6 +420,7 @@ class MainActivity : ComponentActivity() {
                         statusText.text = "A lista pública não retornou perfis utilizáveis. Tente novamente mais tarde."
                         profileText.text = "Nenhum servidor foi selecionado."
                     } else {
+                        lastServerCandidates = candidates
                         showServerPicker(candidates)
                     }
                 }
@@ -427,11 +445,12 @@ class MainActivity : ComponentActivity() {
             .setItems(labels) { _, which -> selectOpenVpnServer(servers[which]) }
             .setNegativeButton("Cancelar", null)
             .show()
-        statusText.text = "${servers.size} servidores OpenVPN encontrados. Escolha um para ver os detalhes."
+        statusText.text = "${servers.size} servidores OpenVPN encontrados. Se um falhar na negociação TLS, escolha outro."
         profileText.text = "A lista é pública e pode conter servidores indisponíveis."
     }
 
     private fun selectOpenVpnServer(server: PublicServer) {
+        lastSelectedServerIp = server.ip
         statusText.text = "Validando o perfil com o núcleo OpenVPN 3…"
         profileText.text = "${server.country} • ${server.ip} • verificando configuração antes de conectar."
 

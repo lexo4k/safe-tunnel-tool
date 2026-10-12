@@ -13,9 +13,13 @@ Construa uma interface visual profissional, mobile-first, que funcione bem em An
 - Não incluir qualquer payload de bypass, host/SNI de operadora, credenciais de terceiros, exploração de falhas de cobrança, nem alegar suporte a todas as operadoras/aparelhos. O projeto é um painel web/protótipo de gerenciamento, não um cliente VPN nativo e não deve apresentar botão como se conectasse de verdade.
 - Entregue a experiência visual completa e código organizado, com avisos claros do que exige um app Android nativo usando VpnService e um servidor VPN real.
 
-## Implementação Android real
+## Aplicativo Android nativo
 
-O repositório atual é uma aplicação web React/Vite. Ele não consegue criar uma VPN de sistema no Android. Consulte [docs/ANDROID_VPN_IMPLEMENTATION.md](docs/ANDROID_VPN_IMPLEMENTATION.md) para a arquitetura nativa planejada, o fluxo obrigatório de autorização do Android, requisitos de privacidade e testes de aceitação. Uma conexão real requer um módulo Android nativo, perfil válido e um servidor VPN autorizado e acessível.
+O projeto nativo inicial está em [android-app/](android-app/README.md). Ele usa a biblioteca oficial WireGuard para Android, permite importar um perfil `.conf`, solicita a autorização VPN do próprio Android e implementa controles reais de conectar/desconectar.
+
+**Limitação importante:** ainda não há servidores VPN operados pelo LivreNet nem perfis de servidor pré-configurados. Para conectar, é necessário importar um perfil WireGuard válido de um servidor online e autorizado. Não são inventados servidores, chaves ou medições. O APK de depuração será publicado como artefato do workflow [Android debug APK](.github/workflows/android-debug-apk.yml) após a compilação.
+
+O painel web continua sendo uma aplicação React/Vite e não pode criar sozinho uma VPN de sistema. Consulte [docs/ANDROID_VPN_IMPLEMENTATION.md](docs/ANDROID_VPN_IMPLEMENTATION.md) para a arquitetura, privacidade e critérios de teste. Android, iOS, Windows, macOS e Linux exigem empacotamento nativo apropriado para cada plataforma.
 
 **Live app**: https://safe-tunnel-tool.lovable.app
 

@@ -267,7 +267,7 @@ class MainActivity : ComponentActivity() {
             gravity = Gravity.CENTER_VERTICAL
         }
         val logo = ImageView(this).apply {
-            setImageResource(R.drawable.lumenvpn_logo)
+            setImageResource(R.drawable.lumen_vpn_logo)
             contentDescription = "Logotipo Lúmen VPN, proteção e conexão global"
             layoutParams = LinearLayout.LayoutParams(68, 68).apply { rightMargin = 14 }
         }

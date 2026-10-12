@@ -294,14 +294,22 @@ class MainActivity : ComponentActivity() {
             val profileFile = File(cacheDir, "livrenet-${server.ip.replace('.', '-')}.ovpn")
             profileFile.writeText(server.ovpn, Charsets.UTF_8)
             val profileUri = FileProvider.getUriForFile(this, "${packageName}.fileprovider", profileFile)
-            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                type = "application/x-openvpn-profile"
-                putExtra(Intent.EXTRA_STREAM, profileUri)
+            val openIntent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(profileUri, "application/x-openvpn-profile")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            statusText.text = "Perfil de ${server.country} preparado. Escolha um cliente OpenVPN para importar e conectar."
+            statusText.text = "Perfil de ${server.country} preparado. Selecione um cliente OpenVPN compatível para importar e conectar."
             profileText.text = "Servidor escolhido: ${server.ip}. O túnel OpenVPN ainda não é executado dentro do LivreNet."
-            startActivity(Intent.createChooser(shareIntent, "Importar perfil OpenVPN"))
+            try {
+                startActivity(openIntent)
+            } catch (_: android.content.ActivityNotFoundException) {
+                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = "application/x-openvpn-profile"
+                    putExtra(Intent.EXTRA_STREAM, profileUri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                startActivity(Intent.createChooser(shareIntent, "Importar perfil OpenVPN"))
+            }
         } catch (error: Exception) {
             statusText.text = "Não foi possível compartilhar o perfil: ${error.message ?: "erro desconhecido"}"
         }

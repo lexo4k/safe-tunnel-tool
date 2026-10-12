@@ -396,7 +396,7 @@ class MainActivity : ComponentActivity() {
                     selectedProtocol == "OpenVPN" && selectedOpenVpnServer != null -> selectOpenVpnServer(selectedOpenVpnServer!!)
                     selectedProtocol == "WireGuard" && config != null -> requestVpnPermission()
                     selectedProtocol == "SSH + SSL Proxy" -> statusText.text = "SSH + SSL Proxy ainda não está disponível: falta o motor de proxy TLS separado e o encaminhamento TUN."
-                    selectedProtocol in setOf("SSH Direct", "SSH + Proxy", "SSH + SSL") -> showSshProxyDialog()
+                    selectedProtocol in setOf("SSH Direct", "SSH + Proxy", "SSH + SSL", "SSH + SSL Proxy") -> showSshProxyDialog()
                     else -> statusText.text = "Escolha um protocolo e forneça um perfil ou servidor compatível."
                 }
             }
@@ -1154,7 +1154,13 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        executor.shutdown()
+        // Close transport resources before shutting down the worker so an SSH session
+        // or local SOCKS listener cannot survive the Activity lifecycle accidentally.
+        sshProxyConnecting = false
+        sshProxyConnected = false
+        runCatching { sshProxy?.close() }
+        sshProxy = null
+        executor.shutdownNow()
         super.onDestroy()
     }
 }

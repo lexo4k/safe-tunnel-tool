@@ -28,6 +28,8 @@ import com.wireguard.config.Config
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import android.widget.EditText
+import android.text.InputType
 import java.util.concurrent.Executors
 import org.json.JSONArray
 import org.json.JSONObject
@@ -55,6 +57,9 @@ class MainActivity : ComponentActivity() {
     @Volatile private var connectAttemptId = 0
     @Volatile private var selectedOpenVpnServer: PublicServer? = null
     @Volatile private var selectedProtocol: String = "OpenVPN"
+    @Volatile private var sshProxyConnected = false
+    @Volatile private var sshProxyConnecting = false
+    @Volatile private var sshProxy: SshSocksProxy? = null
 
     private val openVpnStatusReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -387,9 +392,11 @@ class MainActivity : ComponentActivity() {
                         refreshConnectButton()
                     }
                     connected -> disconnectTunnel()
+                    sshProxyConnected || sshProxyConnecting -> disconnectSshProxy()
                     selectedProtocol == "OpenVPN" && selectedOpenVpnServer != null -> selectOpenVpnServer(selectedOpenVpnServer!!)
                     selectedProtocol == "WireGuard" && config != null -> requestVpnPermission()
-                    else -> statusText.text = "Busque um servidor OpenVPN, importe um perfil .ovpn ou carregue um perfil WireGuard."
+                    selectedProtocol == "SSH + Proxy" -> showSshProxyDialog()
+                    else -> statusText.text = "Escolha um protocolo e forneça um perfil ou servidor compatível."
                 }
             }
         }
@@ -410,10 +417,11 @@ class MainActivity : ComponentActivity() {
                     1, if (protocol == key) mint else android.graphics.Color.rgb(50, 76, 99)
                 )
             }
-            statusText.text = if (key == "OpenVPN") {
-                "Modo OpenVPN selecionado. Escolha um servidor público ou importe um perfil .ovpn."
-            } else {
-                "Modo WireGuard selecionado. Importe um perfil .conf válido para conectar."
+            statusText.text = when (key) {
+                "OpenVPN" -> "Modo OpenVPN selecionado. Escolha um servidor público ou importe um perfil .ovpn."
+                "WireGuard" -> "Modo WireGuard selecionado. Importe um perfil .conf válido para conectar."
+                "SSH + Proxy" -> "SSH + Proxy selecionado. Configure um servidor SSH autorizado para abrir um proxy SOCKS5 local."
+                else -> "Esse modo ainda não tem motor integrado."
             }
             refreshConnectButton()
         }
@@ -446,10 +454,10 @@ class MainActivity : ComponentActivity() {
         }
 
         modeRow("OpenVPN • MOTOR PRINCIPAL", "Servidor público da lista ou perfil .ovpn importado. O app valida o perfil antes de iniciar; certificado e servidor precisam ser compatíveis.", "INTEGRADO", true, "OpenVPN")
-        modeRow("SSH Direct", "Ainda precisa de motor SSH e servidor autorizado.", "EM DESENVOLVIMENTO", false)
-        modeRow("SSH + Proxy", "Ainda precisa de motor SSH/Proxy e servidor autorizado.", "EM DESENVOLVIMENTO", false)
-        modeRow("SSH + SSL", "Ainda precisa de transporte TLS/SSH e servidor autorizado.", "EM DESENVOLVIMENTO", false)
-        modeRow("SSH + SSL Proxy", "Ainda precisa de transporte TLS/SSH, proxy e servidor autorizado.", "EM DESENVOLVIMENTO", false)
+        modeRow("SSH Direct", "Não integrado: exige encaminhamento de tráfego próprio.", "INDISPONÍVEL", false)
+        modeRow("SSH + Proxy", "Abre um proxy SOCKS5 local por SSH. Não redireciona automaticamente todo o tráfego Android.", "MOTOR SOCKS5", true, "SSH + Proxy")
+        modeRow("SSH + SSL", "Não integrado: exige transporte TLS/SSH próprio e servidor compatível.", "INDISPONÍVEL", false)
+        modeRow("SSH + SSL Proxy", "Não integrado: exige transporte TLS/SSH e encaminhamento próprio.", "INDISPONÍVEL", false)
         modeRow("WireGuard • OPÇÃO ALTERNATIVA", "Motor integrado para perfis WireGuard .conf válidos. Não conecta diretamente aos perfis OpenVPN da lista pública.", "INTEGRADO", true, "WireGuard")
         root.addView(modesCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 12 })
 
@@ -1015,17 +1023,117 @@ class MainActivity : ComponentActivity() {
 
     private fun refreshConnectButton() {
         if (!::connectButton.isInitialized) return
-        val active = connected || openVpnConnected
+        val active = connected || openVpnConnected || sshProxyConnected
         connectButton.text = when {
             active -> "Desconectar"
-            openVpnConnecting -> "Cancelar conexão"
+            openVpnConnecting || sshProxyConnecting -> "Cancelar conexão"
             else -> "Conectar"
         }
-        connectButton.isEnabled = active || openVpnConnecting || selectedOpenVpnServer != null || config != null
+        connectButton.isEnabled = active || openVpnConnecting || sshProxyConnecting || selectedOpenVpnServer != null || config != null || selectedProtocol == "SSH + Proxy"
         connectButton.contentDescription = when {
             active -> "Desconectar a VPN"
-            openVpnConnecting -> "Cancelar tentativa de conexão VPN"
+            openVpnConnecting || sshProxyConnecting -> "Cancelar tentativa de conexão"
             else -> selectedOpenVpnServer?.let { "Conectar ao servidor ${it.country}" } ?: "Conectar à VPN"
+        }
+    }
+
+
+    private fun showSshProxyDialog() {
+        val hostInput = EditText(this).apply { hint = "Host do servidor SSH"; singleLine = true }
+        val portInput = EditText(this).apply {
+            hint = "Porta SSH (22)"
+            inputType = InputType.TYPE_CLASS_NUMBER
+            setText("22")
+            singleLine = true
+        }
+        val userInput = EditText(this).apply { hint = "Usuário SSH"; singleLine = true }
+        val passwordInput = EditText(this).apply {
+            hint = "Senha SSH"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            singleLine = true
+        }
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(40, 8, 40, 0)
+            addView(hostInput)
+            addView(portInput)
+            addView(userInput)
+            addView(passwordInput)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Conectar por SSH + SOCKS5")
+            .setMessage("Use apenas um servidor SSH autorizado. Importe um arquivo known_hosts confiável para validar a chave do servidor antes de conectar.")
+            .setView(panel)
+            .setNegativeButton("Cancelar", null)
+            .setNeutralButton("Importar known_hosts") { _, _ ->
+                knownHostsPicker.launch(arrayOf("text/plain", "application/octet-stream", "*/*"))
+            }
+            .setPositiveButton("Conectar") { _, _ ->
+                val host = hostInput.text.toString().trim()
+                val port = portInput.text.toString().toIntOrNull() ?: 22
+                val username = userInput.text.toString().trim()
+                val password = passwordInput.text.toString()
+                if (host.isBlank() || username.isBlank() || password.isBlank() || port !in 1..65535) {
+                    statusText.text = "Informe host, porta, usuário e senha SSH válidos."
+                } else {
+                    connectSshProxy(host, port, username, password)
+                }
+            }
+            .show()
+    }
+
+    private val knownHostsPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        runCatching {
+            contentResolver.openInputStream(uri)?.use { input ->
+                File(filesDir, "ssh_known_hosts").outputStream().use { output -> input.copyTo(output) }
+            } ?: throw IllegalArgumentException("Não foi possível ler o arquivo.")
+            statusText.text = "known_hosts importado. A chave do servidor será validada antes da conexão."
+        }.onFailure { statusText.text = "Falha ao importar known_hosts: ${it.message}" }
+    }
+
+    private fun connectSshProxy(host: String, port: Int, username: String, password: String) {
+        sshProxyConnecting = true
+        refreshConnectButton()
+        statusText.text = "Conectando ao servidor SSH e validando sua chave…"
+        executor.execute {
+            try {
+                val knownHosts = File(filesDir, "ssh_known_hosts")
+                if (!knownHosts.exists()) throw IllegalStateException("Importe um known_hosts confiável antes de conectar. A verificação da chave do servidor não será desativada.")
+                val proxy = SshSocksProxy()
+                proxy.connect(host, port, username, password, knownHosts.absolutePath)
+                sshProxy = proxy
+                sshProxyConnected = true
+                sshProxyConnecting = false
+                runOnUiThread {
+                    statusText.text = "SSH conectado. Proxy SOCKS5 local ativo em 127.0.0.1:${proxy.localPort}. Configure um app compatível para usá-lo; o tráfego Android inteiro ainda não é encaminhado."
+                    internetText.text = "Proxy SSH ativo • encaminhamento local"
+                    refreshConnectButton()
+                }
+            } catch (error: Exception) {
+                runCatching { sshProxy?.close() }
+                sshProxy = null
+                sshProxyConnected = false
+                sshProxyConnecting = false
+                runOnUiThread {
+                    statusText.text = "Falha no SSH/Proxy: ${error.message ?: "verifique o servidor e as credenciais"}"
+                    refreshConnectButton()
+                }
+            }
+        }
+    }
+
+    private fun disconnectSshProxy() {
+        sshProxyConnecting = false
+        executor.execute {
+            runCatching { sshProxy?.close() }
+            sshProxy = null
+            sshProxyConnected = false
+            runOnUiThread {
+                statusText.text = "Proxy SSH desconectado."
+                internetText.text = "Proxy local inativo"
+                refreshConnectButton()
+            }
         }
     }
 

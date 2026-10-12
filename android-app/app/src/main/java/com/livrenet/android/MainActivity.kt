@@ -254,9 +254,11 @@ class MainActivity : ComponentActivity() {
             }
         } else {
             openVpnProfileAfterPermission = null
+            pendingSshStart = null
             connectAfterPermission = false
             connectAttemptId++
             openVpnConnecting = false
+            sshProxyConnecting = false
             openVpnServiceStarted = false
             statusText.text = "Permissão VPN não concedida. Nenhum túnel foi iniciado."
             refreshConnectButton()

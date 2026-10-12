@@ -396,7 +396,7 @@ class MainActivity : ComponentActivity() {
                     selectedProtocol == "OpenVPN" && selectedOpenVpnServer != null -> selectOpenVpnServer(selectedOpenVpnServer!!)
                     selectedProtocol == "WireGuard" && config != null -> requestVpnPermission()
                     selectedProtocol == "SSH + SSL Proxy" -> statusText.text = "SSH + SSL Proxy ainda não está disponível: falta o motor de proxy TLS separado e o encaminhamento TUN."
-                    selectedProtocol in setOf("SSH Direct", "SSH + Proxy", "SSH + SSL", "SSH + SSL Proxy") -> showSshProxyDialog()
+                    selectedProtocol in setOf("SSH Direct", "SSH + Proxy", "SSH + SSL") -> showSshProxyDialog()
                     else -> statusText.text = "Escolha um protocolo e forneça um perfil ou servidor compatível."
                 }
             }

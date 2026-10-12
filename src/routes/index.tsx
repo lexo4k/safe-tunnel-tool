@@ -1,24 +1,13 @@
-import { createFileRoute } from "@tanstack/react-router";
-
-// No head() here: the home route inherits title/description/og/twitter from
-// __root.tsx, and ships no og:image so serve-time hosting can inject the
-// project's social preview (explicit og:image or latest screenshot).
-export const Route = createFileRoute("/")({
-  component: Index,
-});
-
-// IMPORTANT: Replace this placeholder. See ./README.md for routing conventions.
+import { createFileRoute, Link } from '@tanstack/react-router';
+import { Activity, ArrowDown, ArrowRight, ArrowUp, FileKey2, Globe2, Leaf, LockKeyhole, ShieldCheck } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Checklist, ConnectionButton, EmptyChart, Notice, PageHeading, ServersTable } from '@/components/livrenet/shared';
+import { useLivreNet } from '@/components/livrenet/state';
+import { pageHead } from '@/lib/page-head';
+import earth from '@/assets/network-earth.jpg';
+export const Route = createFileRoute('/')({ head: () => pageHead('Visão geral', 'Gerencie perfis VPN legítimos com privacidade. Painel web demonstrativo sem conexão VPN de sistema.'), component: Index });
 function Index() {
-  return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{ backgroundColor: "#fcfbf8" }}
-    >
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
-      />
-    </div>
-  );
+  const { profile } = useLivreNet();
+  const stats = [{ label:'STATUS DA CONEXÃO',value:'Não conectado', note:'Nenhum túnel VPN ativo',icon:ShieldCheck },{label:'SERVIDOR SELECIONADO',value:'Nenhum servidor',note:'Configure um perfil autorizado',icon:Globe2},{label:'PERFIS LOCAIS',value:profile ? '01 perfil' : 'Nenhum perfil',note:'Armazenamento só nesta sessão',icon:FileKey2},{label:'DADOS TRANSFERIDOS',value:'—',note:'Sem medição real de tráfego',icon:Activity}];
+  return <><PageHeading title="Visão geral" subtitle="Sua conexão com mais clareza, segurança e controle." action={<Button variant="outline" asChild><Link to="/perfis"><FileKey2 size={15}/>Importar perfil</Link></Button>}/><div className="grid grid-cols-2 gap-3 xl:grid-cols-4 xl:gap-4">{stats.map(stat => <div className="panel stat-card" key={stat.label}><div className="flex items-center justify-between gap-2"><span className="eyebrow text-[9px]">{stat.label}</span><stat.icon size={16} className="shrink-0 text-muted-foreground"/></div><div className="stat-value text-[19px] lg:text-[21px]">{stat.value}</div><p className="mt-2 text-[10px] leading-5 text-muted-foreground">{stat.note}</p></div>)}</div><div className="mt-5 grid gap-5 xl:grid-cols-[1.5fr_1fr]"><section className="panel connection-panel"><img src={earth} alt="" width={1024} height={1024} className="connection-art"/><div className="panel-heading relative z-10"><h2>Sua conexão VPN</h2><span className="status-badge"><span className="dot"/>Inativa</span></div><div className="connection-content"><div className="power-symbol"><LockKeyhole size={26} strokeWidth={1.5}/></div><h2 className="connection-title">Você não está conectado</h2><p className="connection-note">Configure um perfil autorizado para preparar sua conexão. Nenhum túnel está ativo neste painel.</p><div className="connection-action"><ConnectionButton/><span className="text-[10px] text-muted-foreground">Não inicia uma VPN real</span></div></div></section><section className="panel px-5 py-6"><div className="panel-heading"><h2>Pronto para conectar?</h2><Button asChild variant="ghost" size="icon" aria-label="Abrir diagnóstico"><Link to="/diagnostico"><ArrowRight size={16}/></Link></Button></div><Checklist/></section></div><div className="mt-4"><Notice/></div><div className="mt-6 grid gap-5 xl:grid-cols-[1.5fr_1fr]"><section className="panel overflow-hidden"><div className="panel-heading p-5"><div><h2>Servidores de exemplo</h2><p className="mt-1.5 text-[10px] text-muted-foreground">Demonstração · Não conectados</p></div><Button variant="link" size="sm" asChild><Link to="/servidores">Ver todos<ArrowRight size={13}/></Link></Button></div><ServersTable/></section><section className="panel p-5"><div className="panel-heading"><h2>Monitor de dados</h2><span className="status-badge cyan">Demonstração</span></div><div className="mt-6 flex gap-9"><div><p className="flex items-center gap-1.5 text-[10px] text-muted-foreground"><ArrowDown size={12} className="text-primary"/>Recebidos</p><p className="mt-2 text-xl font-semibold">— <span className="text-[10px] font-normal text-muted-foreground">sem medição</span></p></div><div><p className="flex items-center gap-1.5 text-[10px] text-muted-foreground"><ArrowUp size={12} className="text-success"/>Enviados</p><p className="mt-2 text-xl font-semibold">— <span className="text-[10px] font-normal text-muted-foreground">sem medição</span></p></div></div><EmptyChart/><div className="mt-4 flex justify-between text-[9px] text-muted-foreground"><span>Sem coleta de dados de rede</span><Link to="/dados" className="text-primary">Ver monitor →</Link></div></section></div><section className="guide-band"><span className="icon-box"><Leaf size={22}/></span><div><h2 className="text-sm font-bold">Boa conexão não precisa custar muito.</h2><p className="mt-1.5 text-[11px] leading-5 text-muted-foreground">Conheça alternativas legítimas para economizar no acesso à internet.</p></div><Button variant="outline" asChild><Link to="/economia">Explorar opções<ArrowRight size={14}/></Link></Button></section></>;
 }

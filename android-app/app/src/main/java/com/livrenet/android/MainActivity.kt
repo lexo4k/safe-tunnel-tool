@@ -96,94 +96,158 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun buildScreen() {
+        val ink = android.graphics.Color.rgb(7, 17, 31)
+        val panel = android.graphics.Color.rgb(15, 31, 49)
+        val mint = android.graphics.Color.rgb(34, 211, 197)
+        val white = android.graphics.Color.rgb(239, 246, 255)
+        val muted = android.graphics.Color.rgb(157, 178, 199)
+
+        fun card(): LinearLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(18, 16, 18, 16)
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(panel)
+                cornerRadius = 22f
+                setStroke(1, android.graphics.Color.rgb(35, 57, 78))
+            }
+        }
+        fun label(textValue: String, size: Float, color: Int, bold: Boolean = false): TextView =
+            TextView(this).apply {
+                text = textValue
+                textSize = size
+                setTextColor(color)
+                if (bold) setTypeface(typeface, android.graphics.Typeface.BOLD)
+            }
+        fun styleButton(button: Button, primary: Boolean = false) {
+            button.isAllCaps = false
+            button.textSize = 15f
+            button.setTextColor(if (primary) ink else white)
+            button.background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(if (primary) mint else android.graphics.Color.rgb(26, 45, 65))
+                cornerRadius = 16f
+                if (!primary) setStroke(1, android.graphics.Color.rgb(50, 76, 99))
+            }
+            button.minHeight = 54
+            button.setPadding(16, 12, 16, 12)
+        }
+
+        val scroll = android.widget.ScrollView(this).apply {
+            fillViewport = true
+            setBackgroundColor(ink)
+        }
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(24, 28, 24, 24)
+            setPadding(20, 22, 20, 28)
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
+                ViewGroup.LayoutParams.WRAP_CONTENT
             )
         }
 
+        val brandRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
         val logo = ImageView(this).apply {
             setImageResource(R.drawable.livrenet_logo)
-            contentDescription = "Logotipo LivreNet"
-            layoutParams = LinearLayout.LayoutParams(88, 88).apply {
-                gravity = Gravity.CENTER_HORIZONTAL
-                bottomMargin = 8
-            }
+            contentDescription = "Logotipo LivreNet, proteção e conexão global"
+            layoutParams = LinearLayout.LayoutParams(68, 68).apply { rightMargin = 14 }
         }
-        val title = TextView(this).apply {
-            text = "LivreNet"
-            textSize = 30f
-            gravity = Gravity.CENTER
-        }
-        val subtitle = TextView(this).apply {
-            text = "Sua conexão, com transparência"
-            textSize = 14f
-            gravity = Gravity.CENTER
-            setPadding(0, 2, 0, 12)
-        }
-        internetText = TextView(this).apply {
-            text = "Verificando internet…"
-            textSize = 14f
-            gravity = Gravity.CENTER
-            setPadding(12, 12, 12, 12)
-        }
-        statusText = TextView(this).apply {
-            text = "Escolha uma forma de conexão para começar."
-            textSize = 16f
-            gravity = Gravity.CENTER
-            setPadding(0, 12, 0, 14)
-        }
-        profileText = TextView(this).apply {
-            text = "Nenhum perfil WireGuard carregado."
-            textSize = 14f
-            gravity = Gravity.CENTER
-            setPadding(0, 4, 0, 16)
-        }
+        val brandText = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        brandText.addView(label("LIVRENET", 26f, white, true))
+        brandText.addView(label("PROTEÇÃO • CONEXÃO GLOBAL", 11f, mint, true))
+        brandRow.addView(logo)
+        brandRow.addView(brandText)
+        root.addView(brandRow)
 
-        val checkInternetButton = Button(this).apply {
-            text = "Verificar internet"
-            setOnClickListener { refreshInternetStatus() }
+        val hero = card().apply {
+            setPadding(20, 20, 20, 20)
+            val eyebrow = label("SUA CONEXÃO, SOB SEU CONTROLE", 11f, mint, true)
+            addView(eyebrow)
+            val headline = label("O mundo mais perto.", 25f, white, true).apply {
+                setPadding(0, 8, 0, 6)
+            }
+            addView(headline)
+            addView(label("Consulte a internet, explore servidores públicos e gerencie seu perfil VPN em um só lugar.", 14f, muted))
         }
+        root.addView(hero, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 22 })
+
+        val networkCard = card()
+        networkCard.addView(label("ESTADO DA REDE", 11f, muted, true))
+        internetText = label("Verificando internet…", 16f, white, true).apply {
+            setPadding(0, 8, 0, 2)
+        }
+        networkCard.addView(internetText)
+        statusText = label("Escolha uma opção para começar.", 13f, muted).apply {
+            setPadding(0, 6, 0, 0)
+        }
+        networkCard.addView(statusText)
+        root.addView(networkCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 14 })
+
+        root.addView(label("EXPLORAR E CONECTAR", 12f, mint, true).apply {
+            setPadding(2, 24, 0, 10)
+        })
+
+        val serverCard = card()
+        serverCard.addView(label("🌐  Servidores ao redor do mundo", 17f, white, true))
+        serverCard.addView(label("Consulte a lista pública e escolha um perfil disponível. A disponibilidade varia por país e horário.", 13f, muted).apply {
+            setPadding(0, 6, 0, 12)
+        })
         freeVpnButton = Button(this).apply {
             text = "Buscar servidores públicos"
+            styleButton(this, true)
             setOnClickListener { findFreeVpnGateServers() }
         }
+        serverCard.addView(freeVpnButton, matchWidth())
+        root.addView(serverCard)
+
+        val wireguardCard = card().apply {
+            setPadding(18, 18, 18, 18)
+        }
+        wireguardCard.addView(label("🔐  Conexão WireGuard", 17f, white, true))
+        profileText = label("Nenhum perfil WireGuard carregado.", 13f, muted).apply {
+            setPadding(0, 6, 0, 12)
+        }
+        wireguardCard.addView(profileText)
+
         val importButton = Button(this).apply {
             text = "Importar perfil WireGuard (.conf)"
+            styleButton(this)
             setOnClickListener {
                 profilePicker.launch(arrayOf("application/octet-stream", "text/plain", "*/*"))
             }
         }
+        wireguardCard.addView(importButton, matchWidth())
         connectButton = Button(this).apply {
             text = "Conectar WireGuard"
             isEnabled = false
+            styleButton(this, true)
             setOnClickListener {
                 if (connected) disconnectTunnel() else requestVpnPermission()
             }
         }
+        wireguardCard.addView(connectButton, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 10 })
+        root.addView(wireguardCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 12 })
 
-        val note = TextView(this).apply {
-            text = "Importante: a busca pública encontra perfis OpenVPN e os encaminha para um cliente OpenVPN instalado. Essa versão ainda não executa OpenVPN dentro do LivreNet. Para conectar pelo botão WireGuard, importe um perfil WireGuard válido. Servidores públicos podem ficar offline e não garantem internet grátis ou ilimitada."
-            textSize = 12f
-            setPadding(0, 18, 0, 0)
+        val checkInternetButton = Button(this).apply {
+            text = "Atualizar estado da internet"
+            styleButton(this)
+            setOnClickListener { refreshInternetStatus() }
         }
+        root.addView(checkInternetButton, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 12 })
 
-        root.addView(logo)
-        root.addView(title)
-        root.addView(subtitle)
-        root.addView(internetText, matchWidth())
-        root.addView(statusText, matchWidth())
-        root.addView(profileText, matchWidth())
-        root.addView(checkInternetButton, matchWidth())
-        root.addView(freeVpnButton, matchWidth())
-        root.addView(importButton, matchWidth())
-        root.addView(connectButton, matchWidth())
+        val note = label(
+            "TRANSPARÊNCIA\nA busca global usa servidores públicos de terceiros. Os perfis encontrados são OpenVPN e precisam de um cliente OpenVPN compatível instalado. O botão WireGuard conecta apenas perfis WireGuard válidos. Esta versão ainda não executa OpenVPN dentro do LivreNet. Servidores públicos podem falhar e não garantem internet grátis ou ilimitada.",
+            12f, muted
+        ).apply { setPadding(4, 20, 4, 0) }
         root.addView(note)
-        setContentView(root)
+        root.addView(label("LIVRENET  •  CONEXÃO COM TRANSPARÊNCIA", 10f, muted, true).apply {
+            gravity = Gravity.CENTER
+            setPadding(0, 24, 0, 0)
+        })
+
+        scroll.addView(root)
+        setContentView(scroll)
     }
 
     private fun matchWidth(): LinearLayout.LayoutParams =

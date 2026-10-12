@@ -22,6 +22,7 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
+import androidx.core.content.ContextCompat
 import com.wireguard.android.backend.GoBackend
 import com.wireguard.android.backend.Tunnel
 import com.wireguard.config.Config
@@ -60,6 +61,7 @@ class MainActivity : ComponentActivity() {
     @Volatile private var sshProxyConnected = false
     @Volatile private var sshProxyConnecting = false
     @Volatile private var sshProxy: SshSocksProxy? = null
+    @Volatile private var pendingSshStart: Bundle? = null
 
     private val openVpnStatusReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -122,6 +124,38 @@ class MainActivity : ComponentActivity() {
                 }
                 val alternatives = lastServerCandidates.filter { it.ip != lastSelectedServerIp }
                 if (!isFinishing) showTlsCompatibilityDialog(alternatives)
+            }
+        }
+    }
+
+    private val sshVpnStatusReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val message = intent?.getStringExtra(SshVpnService.EXTRA_STATUS) ?: return
+            when {
+                message.startsWith("[CONNECTED]") -> {
+                    sshProxyConnected = true
+                    sshProxyConnecting = false
+                    runOnUiThread {
+                        statusText.setTextColor(android.graphics.Color.rgb(74, 222, 128))
+                        statusText.text = message.removePrefix("[CONNECTED] ").trim()
+                        internetText.text = "Túnel SSH TCP ativo • UDP/DNS pode não funcionar"
+                        refreshConnectButton()
+                    }
+                }
+                message.startsWith("[CONNECTING]") -> {
+                    sshProxyConnecting = true
+                    runOnUiThread { statusText.text = message.removePrefix("[CONNECTING] ").trim(); refreshConnectButton() }
+                }
+                message.startsWith("[ERROR]") -> {
+                    sshProxyConnected = false
+                    sshProxyConnecting = false
+                    runOnUiThread {
+                        statusText.setTextColor(android.graphics.Color.rgb(248, 113, 113))
+                        statusText.text = message.removePrefix("[ERROR] ").trim()
+                        internetText.text = "Túnel SSH não conectado"
+                        refreshConnectButton()
+                    }
+                }
             }
         }
     }
@@ -202,7 +236,11 @@ class MainActivity : ComponentActivity() {
     private val vpnPermission = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         val pendingOpenVpnProfile = openVpnProfileAfterPermission
         if (result.resultCode == Activity.RESULT_OK) {
-            if (pendingOpenVpnProfile != null) {
+            val pendingSsh = pendingSshStart
+            if (pendingSsh != null) {
+                pendingSshStart = null
+                startSshVpnService(pendingSsh)
+            } else if (pendingOpenVpnProfile != null) {
                 openVpnProfileAfterPermission = null
                 openVpnConnecting = true
                 openVpnServiceStarted = true
@@ -234,10 +272,18 @@ class MainActivity : ComponentActivity() {
             @Suppress("DEPRECATION")
             registerReceiver(openVpnStatusReceiver, filter)
         }
+        val sshFilter = IntentFilter(SshVpnService.ACTION_STATUS)
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(sshVpnStatusReceiver, sshFilter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("DEPRECATION")
+            registerReceiver(sshVpnStatusReceiver, sshFilter)
+        }
     }
 
     override fun onStop() {
         runCatching { unregisterReceiver(openVpnStatusReceiver) }
+        runCatching { unregisterReceiver(sshVpnStatusReceiver) }
         super.onStop()
     }
 
@@ -1100,52 +1146,53 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun connectSshProxy(host: String, port: Int, username: String, password: String, tlsWrapped: Boolean = false) {
+        val knownHosts = File(filesDir, "ssh_known_hosts")
+        if (!knownHosts.isFile) {
+            statusText.text = "Importe um known_hosts confiável antes de conectar. A validação da chave SSH não será desativada."
+            return
+        }
+        val args = Bundle().apply {
+            putString(SshVpnService.EXTRA_HOST, host)
+            putInt(SshVpnService.EXTRA_PORT, port)
+            putString(SshVpnService.EXTRA_USERNAME, username)
+            putString(SshVpnService.EXTRA_PASSWORD, password)
+            putString(SshVpnService.EXTRA_KNOWN_HOSTS, knownHosts.absolutePath)
+            putBoolean(SshVpnService.EXTRA_TLS, tlsWrapped)
+        }
+        val permissionIntent = VpnService.prepare(this)
         sshProxyConnecting = true
         refreshConnectButton()
-        statusText.text = "Conectando ao servidor SSH e validando sua chave…"
-        executor.execute {
-            try {
-                val knownHosts = File(filesDir, "ssh_known_hosts")
-                if (!knownHosts.exists()) throw IllegalStateException("Importe um known_hosts confiável antes de conectar. A verificação da chave do servidor não será desativada.")
-                val proxy = SshSocksProxy()
-                proxy.connect(host, port, username, password, knownHosts.absolutePath, tlsWrapped)
-                sshProxy = proxy
-                sshProxyConnected = true
-                sshProxyConnecting = false
-                runOnUiThread {
-                    statusText.text = if (tlsWrapped) {
-                        "SSH sobre TLS conectado com certificado validado. SOCKS5 local em 127.0.0.1:${proxy.localPort}; o tráfego Android inteiro ainda não é encaminhado."
-                    } else {
-                        "SSH conectado. Proxy SOCKS5 local ativo em 127.0.0.1:${proxy.localPort}. Configure um app compatível; o tráfego Android inteiro ainda não é encaminhado."
-                    }
-                    internetText.text = "Proxy SSH ativo • encaminhamento local"
-                    refreshConnectButton()
-                }
-            } catch (error: Exception) {
-                runCatching { sshProxy?.close() }
-                sshProxy = null
-                sshProxyConnected = false
-                sshProxyConnecting = false
-                runOnUiThread {
-                    statusText.text = "Falha no SSH/Proxy: ${error.message ?: "verifique o servidor e as credenciais"}"
-                    refreshConnectButton()
-                }
-            }
+        statusText.text = "Solicitando autorização VPN do Android para criar o túnel SSH TCP…"
+        if (permissionIntent == null) {
+            startSshVpnService(args)
+        } else {
+            pendingSshStart = args
+            vpnPermission.launch(permissionIntent)
         }
+    }
+
+    private fun startSshVpnService(args: Bundle) {
+        val intent = Intent(this, SshVpnService::class.java).apply {
+            action = SshVpnService.ACTION_START
+            putExtras(args)
+        }
+        sshProxyConnecting = true
+        sshProxyConnected = false
+        refreshConnectButton()
+        ContextCompat.startForegroundService(this, intent)
     }
 
     private fun disconnectSshProxy() {
         sshProxyConnecting = false
-        executor.execute {
-            runCatching { sshProxy?.close() }
-            sshProxy = null
-            sshProxyConnected = false
-            runOnUiThread {
-                statusText.text = "Proxy SSH desconectado."
-                internetText.text = "Proxy local inativo"
-                refreshConnectButton()
-            }
-        }
+        sshProxyConnected = false
+        pendingSshStart = null
+        val intent = Intent(this, SshVpnService::class.java).setAction(SshVpnService.ACTION_STOP)
+        runCatching { startService(intent) }
+        runCatching { sshProxy?.close() }
+        sshProxy = null
+        statusText.text = "Solicitando desconexão do túnel SSH…"
+        internetText.text = "Túnel SSH desconectando"
+        refreshConnectButton()
     }
 
     private fun renderState() {

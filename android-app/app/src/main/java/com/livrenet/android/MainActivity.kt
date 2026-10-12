@@ -194,7 +194,7 @@ class MainActivity : ComponentActivity() {
             setPadding(0, 6, 0, 12)
         })
         freeVpnButton = Button(this).apply {
-            text = "Buscar servidores públicos"
+            text = "Buscar servidores OpenVPN"
             styleButton(this, true)
             setOnClickListener { findFreeVpnGateServers() }
         }
@@ -228,18 +228,18 @@ class MainActivity : ComponentActivity() {
             modesCard.addView(row, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 8 })
         }
 
-        modeRow("WireGuard • MOTOR PRINCIPAL", "Motor VPN integrado ao LivreNet. Importe um perfil WireGuard válido para conectar ao servidor.", "INTEGRADO", true)
+        modeRow("OpenVPN • MOTOR PRINCIPAL SOLICITADO", "Os servidores públicos encontrados usam perfis OpenVPN. O app prepara o perfil e tenta abri-lo diretamente no cliente compatível; o núcleo OpenVPN interno ainda não foi integrado.", "INTEGRAÇÃO PENDENTE", false)
         modeRow("SSH Direct", "Ainda precisa de motor SSH e servidor autorizado.", "EM DESENVOLVIMENTO", false)
         modeRow("SSH + Proxy", "Ainda precisa de motor SSH/Proxy e servidor autorizado.", "EM DESENVOLVIMENTO", false)
         modeRow("SSH + SSL", "Ainda precisa de transporte TLS/SSH e servidor autorizado.", "EM DESENVOLVIMENTO", false)
         modeRow("SSH + SSL Proxy", "Ainda precisa de transporte TLS/SSH, proxy e servidor autorizado.", "EM DESENVOLVIMENTO", false)
-        modeRow("OpenVPN • OPÇÃO ALTERNATIVA", "A lista pública encontra perfis OpenVPN, mas a conexão interna ainda exige integrar o núcleo OpenVPN. Por enquanto, o app tenta abrir um cliente compatível.", "EXTERNO", false)
+        modeRow("WireGuard • OPÇÃO ALTERNATIVA", "Motor integrado para perfis WireGuard .conf válidos. Não conecta diretamente aos perfis OpenVPN da lista pública.", "INTEGRADO", true)
         root.addView(modesCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 12 })
 
         val wireguardCard = card().apply {
             setPadding(18, 18, 18, 18)
         }
-        wireguardCard.addView(label("🔐  Conexão principal • WireGuard", 17f, white, true))
+        wireguardCard.addView(label("🔐  Conexão alternativa • WireGuard", 17f, white, true))
         profileText = label("Nenhum perfil WireGuard carregado.", 13f, muted).apply {
             setPadding(0, 6, 0, 12)
         }
@@ -272,7 +272,7 @@ class MainActivity : ComponentActivity() {
         root.addView(checkInternetButton, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 12 })
 
         val note = label(
-            "TRANSPARÊNCIA\nA busca global usa servidores públicos de terceiros. Os perfis encontrados são OpenVPN e precisam de um cliente OpenVPN compatível instalado. O botão WireGuard conecta apenas perfis WireGuard válidos. Esta versão ainda não executa OpenVPN dentro do LivreNet. Servidores públicos podem falhar e não garantem internet grátis ou ilimitada.",
+            "TRANSPARÊNCIA\nO fluxo principal solicitado é OpenVPN. Nesta versão, o núcleo OpenVPN ainda não está embutido: ao escolher servidor, o LivreNet prepara o perfil e tenta abrir um cliente compatível, sem usar a tela genérica de compartilhar. A conexão ainda precisa ser confirmada no cliente externo. WireGuard fica como alternativa integrada para perfis .conf válidos. Servidores públicos podem falhar e não garantem internet grátis ou ilimitada.",
             12f, muted
         ).apply { setPadding(4, 20, 4, 0) }
         root.addView(note)

@@ -48,12 +48,41 @@ class MainActivity : ComponentActivity() {
     @Volatile private var lastServerCandidates: List<PublicServer> = emptyList()
     @Volatile private var lastSelectedServerIp: String? = null
     @Volatile private var tlsDialogShowing = false
+    @Volatile private var openVpnConnected = false
 
     private val openVpnStatusReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val message = intent?.getStringExtra(OpenVpnVpnService.EXTRA_STATUS) ?: return
-            if (::statusText.isInitialized) statusText.text = message
             val lower = message.lowercase()
+            val upper = message.uppercase()
+            val connectionEstablished =
+                (upper.contains("CONNECTED") || upper.contains("CONNECTION_ESTABLISHED") || upper.contains("TUNNEL UP")) &&
+                    listOf("DISCONNECTED", "NOT CONNECTED", "CONNECTING", "UNCONNECTED").none { upper.contains(it) }
+            val connectionEnded = listOf("DISCONNECTED", "CONNECTION FAILED", "AUTHENTICATION FAILED", "TLS ERROR", "ERRO:", "FALHA").any { upper.contains(it) }
+
+            if (connectionEstablished) {
+                openVpnConnected = true
+                runOnUiThread {
+                    statusText.setTextColor(android.graphics.Color.rgb(74, 222, 128))
+                    statusText.text = "✓ VPN conectada. O núcleo confirmou a conexão."
+                    internetText.setTextColor(android.graphics.Color.rgb(74, 222, 128))
+                    internetText.text = "Túnel VPN conectado"
+                }
+                return
+            }
+            if (connectionEnded) openVpnConnected = false
+            if (openVpnConnected && !connectionEnded) return
+            runOnUiThread {
+                statusText.setTextColor(
+                    if (connectionEnded) android.graphics.Color.rgb(248, 113, 113)
+                    else android.graphics.Color.rgb(157, 178, 199)
+                )
+                statusText.text = message
+                if (connectionEnded) {
+                    internetText.setTextColor(android.graphics.Color.rgb(248, 113, 113))
+                    internetText.text = "VPN desconectada ou com falha"
+                }
+            }
             val tlsOrAuthFailure = listOf(
                 "unsupportedcertversion", "invalid peer certificate", "certificate verify failed",
                 "certificate verification failed", "tls handshake", "tls error",
@@ -61,7 +90,7 @@ class MainActivity : ComponentActivity() {
                 "auth_failed", "private key", "unsupported protocol"
             ).any { lower.contains(it) }
             if (tlsOrAuthFailure && !tlsDialogShowing) {
-                if (::statusText.isInitialized) {
+                runOnUiThread {
                     statusText.text = "Falha de compatibilidade TLS, certificado ou autenticação. A validação de segurança foi mantida; tente outro servidor ou perfil."
                 }
                 val alternatives = lastServerCandidates.filter { it.ip != lastSelectedServerIp }
@@ -709,27 +738,19 @@ class MainActivity : ComponentActivity() {
                     return@runOnUiThread
                 }
 
-                openVpnProfileAfterPermission = server.ovpn
+                openVpnConnected = false
+                statusText.setTextColor(android.graphics.Color.rgb(157, 178, 199))
+                statusText.text = "Perfil válido. Solicitando a permissão VPN do Android…"
                 profileText.text = "${server.country} • ${server.ip} • perfil validado pelo OpenVPN 3 Core."
-                AlertDialog.Builder(this)
-                    .setTitle("Autorizar o túnel VPN")
-                    .setMessage("O Android vai pedir permissão para o LivreNet criar uma conexão VPN e encaminhar o tráfego de rede pelo servidor selecionado. O app não consegue ler senhas do aparelho nem conceder essa autorização sozinho.")
-                    .setNegativeButton("Cancelar") { _, _ ->
-                        openVpnProfileAfterPermission = null
-                        statusText.text = "Conexão cancelada. Nenhuma VPN foi iniciada."
-                    }
-                    .setPositiveButton("Continuar") { _, _ ->
-                        statusText.text = "Solicitando autorização oficial do Android…"
-                        val permissionIntent = VpnService.prepare(this)
-                        if (permissionIntent == null) {
-                            openVpnProfileAfterPermission = null
-                            statusText.text = "Iniciando o túnel OpenVPN dentro do LivreNet…"
-                            OpenVpnVpnService.connect(this, server.ovpn)
-                        } else {
-                            vpnPermission.launch(permissionIntent)
-                        }
-                    }
-                    .show()
+                openVpnProfileAfterPermission = server.ovpn
+                val permissionIntent = VpnService.prepare(this)
+                if (permissionIntent == null) {
+                    openVpnProfileAfterPermission = null
+                    statusText.text = "Permissão já concedida. Iniciando o túnel OpenVPN…"
+                    OpenVpnVpnService.connect(this, server.ovpn)
+                } else {
+                    vpnPermission.launch(permissionIntent)
+                }
             }
         }
     }

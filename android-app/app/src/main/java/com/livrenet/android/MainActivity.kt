@@ -425,6 +425,19 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun findFreeVpnGateServers() {
+        val manager = getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        val network = manager.activeNetwork
+        val caps = network?.let { manager.getNetworkCapabilities(it) }
+        val internetValidated = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true &&
+            caps.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+        val cached = lastServerCandidates.ifEmpty { loadCachedServers() }
+        if (!internetValidated && cached.isNotEmpty()) {
+            lastServerCandidates = cached
+            statusText.text = "Sem internet validada. Abrindo ${cached.size} perfis salvos no aparelho; conectar ainda depende de alcançar o servidor."
+            profileText.text = "Lista offline. Alguns servidores podem estar fora do ar ou ter mudado de configuração."
+            showServerPicker(cached)
+            return
+        }
         freeVpnButton.isEnabled = false
         statusText.text = "Buscando servidores públicos disponíveis…"
         profileText.text = "Consultando a lista pública do VPN Gate."

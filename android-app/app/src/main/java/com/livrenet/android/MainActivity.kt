@@ -318,6 +318,14 @@ class MainActivity : ComponentActivity() {
             setOnClickListener { findFreeVpnGateServers() }
         }
         serverCard.addView(freeVpnButton, matchWidth())
+
+        val randomVpnButton = Button(this).apply {
+            text = "Conectar a servidor aleatório"
+            styleButton(this)
+            setOnClickListener { connectRandomServer() }
+        }
+        serverCard.addView(randomVpnButton, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 8 })
+
         connectButton = Button(this).apply {
             text = "Conectar"
             isEnabled = false
@@ -506,6 +514,22 @@ class MainActivity : ComponentActivity() {
         } else if (!connected) {
             statusText.text = "Conexão de rede detectada. Isso não confirma que há franquia disponível nem garante acesso ao servidor VPN. Escolha um servidor ou importe um perfil WireGuard."
         }
+    }
+
+    private fun connectRandomServer() {
+        val candidates = lastServerCandidates.ifEmpty { loadCachedServers() }
+        if (candidates.isEmpty()) {
+            statusText.text = "Ainda não há servidores guardados. Buscando a lista pública; depois toque em “Conectar a servidor aleatório”."
+            findFreeVpnGateServers()
+            return
+        }
+        val availableChoices = candidates.filter { it.ip != lastSelectedServerIp }.ifEmpty { candidates }
+        val chosen = availableChoices.random()
+        selectedOpenVpnServer = chosen
+        statusText.text = "Escolha aleatória: ${chosen.country} • ${chosen.ip}. Validando perfil antes de conectar…"
+        profileText.text = "Servidor aleatório selecionado entre ${candidates.size} perfis guardados."
+        refreshConnectButton()
+        selectOpenVpnServer(chosen)
     }
 
     private fun findFreeVpnGateServers() {

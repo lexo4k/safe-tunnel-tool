@@ -228,18 +228,18 @@ class MainActivity : ComponentActivity() {
             modesCard.addView(row, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 8 })
         }
 
-        modeRow("WireGuard", "Túnel criptografado. Requer importar um perfil válido e ter um servidor acessível.", "COM PERFIL", true)
-        modeRow("OpenVPN", "A busca de perfis públicos prepara um arquivo para um cliente externo; o motor ainda não está integrado.", "EXTERNO", false)
+        modeRow("WireGuard • MOTOR PRINCIPAL", "Motor VPN integrado ao LivreNet. Importe um perfil WireGuard válido para conectar ao servidor.", "INTEGRADO", true)
         modeRow("SSH Direct", "Ainda precisa de motor SSH e servidor autorizado.", "EM DESENVOLVIMENTO", false)
         modeRow("SSH + Proxy", "Ainda precisa de motor SSH/Proxy e servidor autorizado.", "EM DESENVOLVIMENTO", false)
         modeRow("SSH + SSL", "Ainda precisa de transporte TLS/SSH e servidor autorizado.", "EM DESENVOLVIMENTO", false)
         modeRow("SSH + SSL Proxy", "Ainda precisa de transporte TLS/SSH, proxy e servidor autorizado.", "EM DESENVOLVIMENTO", false)
+        modeRow("OpenVPN • OPÇÃO ALTERNATIVA", "A lista pública encontra perfis OpenVPN, mas a conexão interna ainda exige integrar o núcleo OpenVPN. Por enquanto, o app tenta abrir um cliente compatível.", "EXTERNO", false)
         root.addView(modesCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 12 })
 
         val wireguardCard = card().apply {
             setPadding(18, 18, 18, 18)
         }
-        wireguardCard.addView(label("🔐  Conexão WireGuard", 17f, white, true))
+        wireguardCard.addView(label("🔐  Conexão principal • WireGuard", 17f, white, true))
         profileText = label("Nenhum perfil WireGuard carregado.", 13f, muted).apply {
             setPadding(0, 6, 0, 12)
         }

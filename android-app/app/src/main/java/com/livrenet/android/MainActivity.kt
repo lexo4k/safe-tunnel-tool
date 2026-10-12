@@ -68,6 +68,7 @@ class MainActivity : ComponentActivity() {
                     statusText.text = "✓ VPN conectada. O núcleo confirmou a conexão."
                     internetText.setTextColor(android.graphics.Color.rgb(74, 222, 128))
                     internetText.text = "Túnel VPN conectado"
+                    refreshConnectButton()
                 }
                 return
             }
@@ -83,6 +84,7 @@ class MainActivity : ComponentActivity() {
                     internetText.setTextColor(android.graphics.Color.rgb(248, 113, 113))
                     internetText.text = "VPN desconectada ou com falha"
                 }
+                refreshConnectButton()
             }
             val tlsOrAuthFailure = listOf(
                 "unsupportedcertversion", "invalid peer certificate", "certificate verify failed",

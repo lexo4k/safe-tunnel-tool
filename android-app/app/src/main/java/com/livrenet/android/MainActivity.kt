@@ -90,6 +90,7 @@ class MainActivity : ComponentActivity() {
             gravity = Gravity.CENTER
         }
         statusText = TextView(this).apply {
+            text = "Importe um perfil WireGuard válido para começar."
             textSize = 17f
             gravity = Gravity.CENTER
             setPadding(0, 28, 0, 18)

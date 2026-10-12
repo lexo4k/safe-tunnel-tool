@@ -505,12 +505,12 @@ class MainActivity : ComponentActivity() {
                     }
                     .mapNotNull { line ->
                         try {
-                            val fields = line.split(",", limit = 15)
+                            val fields = parseCsvRecord(line)
                             if (fields.size < 15) return@mapNotNull null
-                            val ip = fields[1].trim().trim('"')
-                            val speed = fields[4].trim().trim('"').toLongOrNull() ?: 0L
-                            val country = fields[5].trim().trim('"').ifBlank { "País desconhecido" }
-                            val encodedConfig = fields[14].trim().trim('"')
+                            val ip = fields[1].trim()
+                            val speed = fields[4].trim().toLongOrNull() ?: 0L
+                            val country = fields[5].trim().ifBlank { "País desconhecido" }
+                            val encodedConfig = fields[14].trim()
                             val ovpn = String(Base64.decode(encodedConfig, Base64.DEFAULT), Charsets.UTF_8)
                             if (ip.isBlank() || !ovpn.contains("client") || !ovpn.contains("remote ")) {
                                 null
@@ -598,6 +598,36 @@ class MainActivity : ComponentActivity() {
                 .sortedByDescending { it.speed }
                 .take(20)
         }.getOrDefault(emptyList())
+    }
+
+    /**
+     * Parses one CSV record while respecting quoted fields and escaped double quotes.
+     * VPN Gate metadata can contain commas inside quoted text, so String.split(",")
+     * can shift the OpenVPN profile column and produce invalid profiles.
+     */
+    private fun parseCsvRecord(line: String): List<String> {
+        val fields = mutableListOf<String>()
+        val field = StringBuilder()
+        var inQuotes = false
+        var i = 0
+        while (i < line.length) {
+            val ch = line[i]
+            when {
+                ch == '"' && inQuotes && i + 1 < line.length && line[i + 1] == '"' -> {
+                    field.append('"')
+                    i++
+                }
+                ch == '"' -> inQuotes = !inQuotes
+                ch == ',' && !inQuotes -> {
+                    fields.add(field.toString())
+                    field.setLength(0)
+                }
+                else -> field.append(ch)
+            }
+            i++
+        }
+        fields.add(field.toString())
+        return fields
     }
 
     private fun showServerPicker(servers: List<PublicServer>) {

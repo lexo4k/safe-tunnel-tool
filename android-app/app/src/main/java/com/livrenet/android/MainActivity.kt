@@ -400,24 +400,32 @@ class MainActivity : ComponentActivity() {
             val profileFile = File(cacheDir, "livrenet-${server.ip.replace('.', '-')}.ovpn")
             profileFile.writeText(server.ovpn, Charsets.UTF_8)
             val profileUri = FileProvider.getUriForFile(this, "${packageName}.fileprovider", profileFile)
+
+            // Target the known OpenVPN for Android package directly. An implicit
+            // ACTION_VIEW can fall back to Android's generic resolver/share sheet,
+            // which looks like sharing rather than choosing a VPN connection.
             val openIntent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(profileUri, "application/x-openvpn-profile")
+                setPackage("de.blinkt.openvpn")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            statusText.text = "Abrindo o servidor ${server.country} no cliente OpenVPN…"
-            profileText.text = "Servidor selecionado: ${server.ip}. O cliente externo precisa importar o perfil e iniciar o túnel."
+
+            statusText.text = "Preparando conexão OpenVPN com ${server.country}…"
+            profileText.text = "Servidor selecionado: ${server.ip}. O perfil será enviado diretamente ao cliente OpenVPN compatível."
             try {
                 startActivity(openIntent)
             } catch (_: android.content.ActivityNotFoundException) {
-                statusText.text = "Nenhum cliente OpenVPN compatível foi encontrado."
+                statusText.text = "O cliente OpenVPN para Android não foi encontrado."
+                profileText.text = "Nenhum túnel foi iniciado. Instale um cliente compatível e tente novamente."
                 AlertDialog.Builder(this)
                     .setTitle("Cliente OpenVPN necessário")
-                    .setMessage("O servidor escolhido usa OpenVPN, mas o LivreNet ainda não tem o motor OpenVPN integrado. Instale um cliente OpenVPN compatível e toque novamente no servidor. O app não vai abrir mais a tela de compartilhar arquivo.")
+                    .setMessage("O servidor público selecionado usa OpenVPN. Para evitar abrir a tela de compartilhar arquivos, o LivreNet tenta chamar diretamente o OpenVPN for Android. Esse cliente não está instalado ou não aceita esse tipo de perfil. O LivreNet ainda não inclui o motor OpenVPN internamente; portanto, nenhum túnel foi iniciado.")
                     .setPositiveButton("Entendi", null)
                     .show()
             }
         } catch (error: Exception) {
-            statusText.text = "Não foi possível abrir o perfil OpenVPN: ${error.message ?: "erro desconhecido"}"
+            statusText.text = "Não foi possível preparar o perfil OpenVPN: ${error.message ?: "erro desconhecido"}"
+            profileText.text = "Nenhum túnel foi confirmado."
         }
     }
 

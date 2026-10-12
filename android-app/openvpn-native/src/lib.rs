@@ -1,7 +1,7 @@
 use jni::objects::{GlobalRef, JClass, JObject, JString, JValue};
 use jni::sys::{jint, jstring};
 use jni::{JNIEnv, JavaVM};
-use openvpn_connect::{Client, Config, EventHandler, TunBuilder};
+use openvpn_connect::{Client, Config, Credentials, EventHandler, TunBuilder};
 use std::sync::{Mutex, OnceLock};
 
 static ACTIVE_CLIENT: OnceLock<Mutex<Option<Client>>> = OnceLock::new();
@@ -232,8 +232,18 @@ pub extern "system" fn Java_com_livrenet_android_OpenVpnVpnService_nativeConnect
         Ok(client) => client,
         Err(error) => return java_string(&mut env, format!("ERRO AO INICIAR OPENVPN: {error}")),
     };
-    if let Err(error) = client.evaluate(&Config::new(profile)) {
-        return java_string(&mut env, format!("ERRO DE PERFIL: {error}"));
+    let evaluation = match client.evaluate(&Config::new(profile)) {
+        Ok(evaluation) => evaluation,
+        Err(error) => return java_string(&mut env, format!("ERRO DE PERFIL: {error}")),
+    };
+
+    // VPN Gate's published OpenVPN profiles use the public shared credentials
+    // "vpn"/"vpn" when username/password authentication is required.
+    // Auto-login profiles already carry their own client authentication.
+    if !evaluation.autologin {
+        if let Err(error) = client.provide_credentials(&Credentials::new("vpn", "vpn")) {
+            return java_string(&mut env, format!("ERRO DE AUTENTICAÇÃO: não foi possível fornecer as credenciais públicas do VPN Gate: {error}"));
+        }
     }
 
     if let Ok(mut slot) = active_client().lock() {

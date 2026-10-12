@@ -1,4 +1,4 @@
-package com.lumenvpn.android
+package com.livrenet.android
 
 import android.app.Notification
 import android.app.NotificationChannel

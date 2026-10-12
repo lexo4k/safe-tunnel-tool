@@ -20,6 +20,14 @@
 on:
   push:
     branches: [ "main" ]
+    paths:
+      - "package.json"
+      - "package-lock.json"
+      - "server/**"
+      - "api/**"
+      - "src/**"
+      - "public/**"
+      - ".github/workflows/azure-webapps-node.yml"
   workflow_dispatch:
 
 env:

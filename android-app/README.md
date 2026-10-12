@@ -2,14 +2,24 @@
 
 Native Android companion app for the LivreNet project.
 
-## Current functionality (version 0.3.0)
+## Current functionality (version 0.4.0)
 
 - Native Portuguese interface with a dark navy / turquoise visual identity, responsive scrolling layout, and globe-inspired LivreNet branding.
 - Manual import and real connect/disconnect for WireGuard `.conf` profiles using the official WireGuard tunnel backend.
 - Android VPN consent prompt via `VpnService.prepare()`.
+- Checks the WireGuard backend state after a connect request instead of treating the request alone as proof that the tunnel is active.
+- In-app protocol support notes distinguish working WireGuard support from external OpenVPN import and SSH modes that are not implemented yet.
 - Public server discovery through the VPN Gate public API, with country/IP labels and advertised speed ordering.
 - Downloads the selected VPN Gate OpenVPN configuration and shares it as an `.ovpn` profile with an installed compatible OpenVPN client.
 - Builds a debug APK through GitHub Actions.
+
+## Protocol support and remaining implementation work
+
+- **WireGuard:** implemented in-app, using a user-supplied valid `.conf` profile. The app checks the backend state after requesting connection; successful tunnel activation still does not guarantee that the remote server has working routes or internet access.
+- **OpenVPN:** not embedded yet. VPN Gate profiles are shared with an external compatible OpenVPN client.
+- **SSH Direct, SSH + Proxy, SSH + SSL, SSH + SSL Proxy:** not implemented yet. These require real SSH transport implementations, correct proxy/TLS handling, and an authorized reachable SSH gateway. The interface deliberately does not claim these modes work.
+
+To finish the requested multi-protocol experience, the next engineering tasks are integrating and testing an OpenVPN engine suitable for Android, then implementing or integrating maintained SSH transport components, adding server/profile configuration for authorized endpoints, and testing connect/disconnect, reconnects, DNS, routes, and traffic on real devices. No private server or credentials are available in this repository, so those cannot be fabricated.
 
 ## Important protocol limitation
 

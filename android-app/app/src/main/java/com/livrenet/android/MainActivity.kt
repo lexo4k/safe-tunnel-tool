@@ -1033,19 +1033,28 @@ class MainActivity : ComponentActivity() {
         profileText.text = "${server.country} • ${server.ip} • verificando configuração antes de conectar."
 
         executor.execute {
-            val validation = OpenVpnNative.validateProfileOrMessage(server.ovpn)
+            val legacyCertificateIssue = legacyClientCertificateIssue(server.ovpn)
+            val validation = if (legacyCertificateIssue != null) {
+                "ERRO DE PERFIL: $legacyCertificateIssue"
+            } else {
+                OpenVpnNative.validateProfileOrMessage(server.ovpn)
+            }
             runOnUiThread {
                 if (attemptId != connectAttemptId) return@runOnUiThread
                 if (!validation.startsWith("OK:")) {
                     openVpnConnecting = false
                     refreshConnectButton()
                     statusText.text = validation
-                    profileText.text = "Perfil não iniciado. Verifique a configuração ou tente outro servidor."
-                    AlertDialog.Builder(this)
-                        .setTitle("Não foi possível validar o perfil")
-                        .setMessage(validation)
-                        .setPositiveButton("Entendi", null)
-                        .show()
+                    profileText.text = "Perfil incompatível ignorado. Tentando outro servidor público compatível."
+                    if (legacyCertificateIssue != null && lastServerCandidates.isNotEmpty()) {
+                        tryAutomaticOpenVpnFailover(validation)
+                    } else {
+                        AlertDialog.Builder(this)
+                            .setTitle("Não foi possível validar o perfil")
+                            .setMessage(validation)
+                            .setPositiveButton("Entendi", null)
+                            .show()
+                    }
                     return@runOnUiThread
                 }
 
@@ -1068,6 +1077,33 @@ class MainActivity : ComponentActivity() {
                     vpnPermission.launch(permissionIntent)
                 }
             }
+        }
+    }
+
+    /**
+     * OpenVPN 3's Rust TLS stack rejects legacy X.509 v1 client certificates.
+     * Detect inline PEM client certificates before connecting so public VPN Gate
+     * profiles with unsupported certificate versions can be skipped automatically.
+     * This does not weaken TLS or bypass certificate verification.
+     */
+    private fun legacyClientCertificateIssue(profile: String): String? {
+        val certStart = profile.indexOf("<cert>", ignoreCase = true)
+        val certEnd = profile.indexOf("</cert>", ignoreCase = true)
+        if (certStart < 0 || certEnd <= certStart) return null
+        val pem = profile.substring(certStart + 6, certEnd).trim()
+        if (!pem.contains("-----BEGIN CERTIFICATE-----")) return null
+        return try {
+            val certificate = java.security.cert.CertificateFactory
+                .getInstance("X.509")
+                .generateCertificate(pem.byteInputStream()) as java.security.cert.X509Certificate
+            if (certificate.version != 3) {
+                "certificado de cliente X.509 versão ${certificate.version} incompatível com o OpenVPN 3/Rust TLS. O app vai tentar outro perfil."
+            } else {
+                null
+            }
+        } catch (_: Exception) {
+            // Leave malformed/unsupported formats to the native OpenVPN validator.
+            null
         }
     }
 

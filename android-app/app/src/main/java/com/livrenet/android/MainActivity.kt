@@ -51,6 +51,8 @@ class MainActivity : ComponentActivity() {
     @Volatile private var lastServerCandidates: List<PublicServer> = emptyList()
     @Volatile private var randomConnectAfterSearch = false
     @Volatile private var lastSelectedServerIp: String? = null
+    private val attemptedOpenVpnServerIps = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    @Volatile private var lastAutomaticFailoverAt: Long = 0L
     @Volatile private var tlsDialogShowing = false
     @Volatile private var openVpnConnected = false
     @Volatile private var openVpnConnecting = false
@@ -81,6 +83,7 @@ class MainActivity : ComponentActivity() {
             ).any { upper.contains(it) }
 
             if (connectionEstablished) {
+                attemptedOpenVpnServerIps.clear()
                 openVpnConnected = true
                 openVpnConnecting = false
                 runOnUiThread {
@@ -119,12 +122,17 @@ class MainActivity : ComponentActivity() {
                 "handshake failed", "no shared cipher", "peer certificate", "authentication failed",
                 "auth_failed", "private key", "unsupported protocol"
             ).any { lower.contains(it) }
-            if (tlsOrAuthFailure && !tlsDialogShowing) {
-                runOnUiThread {
-                    statusText.text = "Falha de compatibilidade TLS, certificado ou autenticação. A validação de segurança foi mantida; tente outro servidor ou perfil."
+            if (tlsOrAuthFailure) {
+                val canFailOver = selectedProtocol == "OpenVPN" && selectedOpenVpnServer != null && lastServerCandidates.isNotEmpty()
+                if (canFailOver) {
+                    tryAutomaticOpenVpnFailover(message)
+                } else if (!tlsDialogShowing) {
+                    runOnUiThread {
+                        statusText.text = "Falha real do OpenVPN: $message. A validação de certificados foi mantida; confira o perfil ou tente outro servidor."
+                    }
+                    val alternatives = lastServerCandidates.filter { it.ip != lastSelectedServerIp }
+                    if (!isFinishing) showTlsCompatibilityDialog(alternatives)
                 }
-                val alternatives = lastServerCandidates.filter { it.ip != lastSelectedServerIp }
-                if (!isFinishing) showTlsCompatibilityDialog(alternatives)
             }
         }
     }
@@ -920,6 +928,8 @@ class MainActivity : ComponentActivity() {
             card.isClickable = true
             card.isFocusable = true
             card.setOnClickListener {
+                attemptedOpenVpnServerIps.clear()
+                lastAutomaticFailoverAt = 0L
                 selectedOpenVpnServer = server
                 selectedProtocol = "OpenVPN"
                 serverDialog?.dismiss()
@@ -949,6 +959,30 @@ class MainActivity : ComponentActivity() {
     }
 
     private var serverDialog: AlertDialog? = null
+
+    private fun tryAutomaticOpenVpnFailover(reason: String) {
+        val now = System.currentTimeMillis()
+        if (now - lastAutomaticFailoverAt < 4000L) return
+        val next = lastServerCandidates.firstOrNull { it.ip != lastSelectedServerIp && !attemptedOpenVpnServerIps.contains(it.ip) }
+        if (next == null) {
+            if (!tlsDialogShowing && !isFinishing) {
+                runOnUiThread {
+                    statusText.text = "Tentativas automáticas concluídas. Último erro do OpenVPN: ${reason.take(220)}"
+                    showTlsCompatibilityDialog(emptyList())
+                }
+            }
+            return
+        }
+        lastAutomaticFailoverAt = now
+        attemptedOpenVpnServerIps.add(next.ip)
+        runOnUiThread {
+            if (isFinishing) return@runOnUiThread
+            statusText.setTextColor(android.graphics.Color.rgb(157, 178, 199))
+            statusText.text = "Falha no servidor ${lastSelectedServerIp ?: "atual"}. Tentando automaticamente ${next.country} • ${next.ip}…"
+            profileText.text = "Alternativa automática. Erro anterior do motor OpenVPN: ${reason.take(180)}"
+            selectOpenVpnServer(next)
+        }
+    }
 
     private fun showTlsCompatibilityDialog(alternatives: List<PublicServer>) {
         if (tlsDialogShowing || isFinishing) return
@@ -988,6 +1022,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun selectOpenVpnServer(server: PublicServer) {
+        attemptedOpenVpnServerIps.add(server.ip)
         val attemptId = ++connectAttemptId
         lastSelectedServerIp = server.ip
         openVpnConnecting = true

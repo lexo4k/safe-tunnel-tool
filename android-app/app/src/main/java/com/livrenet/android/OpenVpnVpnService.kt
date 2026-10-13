@@ -64,7 +64,15 @@ class OpenVpnVpnService : VpnService() {
 
                         if (!reconnectRequested || generation != connectionGeneration) break
                         if (isNonRetryableFailure(finalMessage) || retry >= MAX_RECONNECTS) {
-                            publishStatus(finalMessage)
+                            // Give MainActivity a concrete, machine-readable terminal failure so it can
+                            // try the next public profile. Keep the service alive briefly for that handoff.
+                            publishStatus("[OPENVPN_FAILED] $finalMessage")
+                            try {
+                                Thread.sleep(8000L)
+                            } catch (_: InterruptedException) {
+                                Thread.currentThread().interrupt()
+                            }
+                            if (generation != connectionGeneration) break
                             reconnectRequested = false
                             break
                         }
@@ -80,7 +88,11 @@ class OpenVpnVpnService : VpnService() {
                         }
                     }
                     if (generation == connectionGeneration && !reconnectRequested) {
-                        publishStatus("OpenVPN desconectado ou tentativas automáticas encerradas.")
+                        // Preserve the concrete native/OpenVPN error already published above.
+                        // Only show the generic message when the engine returned no useful detail.
+                        if (finalMessage.isBlank() || finalMessage == "OpenVPN desconectado.") {
+                            publishStatus("OpenVPN desconectado ou tentativas automáticas encerradas. O servidor não confirmou o túnel.")
+                        }
                         stopSelf()
                     }
                 }
@@ -116,7 +128,7 @@ class OpenVpnVpnService : VpnService() {
 
     fun nativeNewTunnel(): Boolean {
         return try {
-            tunnelBuilder = Builder().setSession("LivreNet • OpenVPN")
+            tunnelBuilder = Builder().setSession("Lúmen VPN • OpenVPN")
             true
         } catch (_: Exception) {
             false
@@ -220,7 +232,7 @@ class OpenVpnVpnService : VpnService() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val channel = NotificationChannel(
                 CHANNEL_ID,
-                "LivreNet VPN",
+                "Lúmen VPN VPN",
                 NotificationManager.IMPORTANCE_LOW
             )
             getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
@@ -241,8 +253,8 @@ class OpenVpnVpnService : VpnService() {
             Notification.Builder(this)
         }
         return builder
-            .setSmallIcon(android.R.drawable.stat_sys_warning)
-            .setContentTitle("LivreNet • OpenVPN")
+            .setSmallIcon(android.R.drawable.ic_lock_lock)
+            .setContentTitle("Lúmen VPN • OpenVPN")
             .setContentText(text)
             .setOngoing(true)
             .addAction(Notification.Action.Builder(null, "Desconectar", stopPendingIntent).build())
@@ -255,13 +267,13 @@ class OpenVpnVpnService : VpnService() {
     }
 
     companion object {
-        const val ACTION_CONNECT = "com.livrenet.android.OPENVPN_CONNECT"
-        const val ACTION_STOP = "com.livrenet.android.OPENVPN_STOP"
-        const val ACTION_STATUS = "com.livrenet.android.OPENVPN_STATUS"
+        const val ACTION_CONNECT = "com.lumenvpn.android.OPENVPN_CONNECT"
+        const val ACTION_STOP = "com.lumenvpn.android.OPENVPN_STOP"
+        const val ACTION_STATUS = "com.lumenvpn.android.OPENVPN_STATUS"
         const val EXTRA_PROFILE = "openvpn_profile"
         const val EXTRA_STATUS = "openvpn_status"
 
-        private const val CHANNEL_ID = "livrenet_openvpn"
+        private const val CHANNEL_ID = "lumenvpn_openvpn"
         private const val NOTIFICATION_ID = 4172
         private const val MAX_RECONNECTS = 3
         private val RETRY_DELAYS_SECONDS = intArrayOf(2, 5, 10)

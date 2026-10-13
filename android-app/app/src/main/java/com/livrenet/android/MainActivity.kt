@@ -695,6 +695,7 @@ class MainActivity : ComponentActivity() {
             findFreeVpnGateServers()
             return
         }
+        lastServerCandidates = candidates
         val availableChoices = candidates.filter { it.ip != lastSelectedServerIp }.ifEmpty { candidates }
         val chosen = availableChoices.random()
         selectedOpenVpnServer = chosen
@@ -1137,7 +1138,7 @@ class MainActivity : ComponentActivity() {
                     refreshConnectButton()
                     statusText.text = validation
                     profileText.text = "Perfil incompatível ignorado. Tentando outro servidor público compatível."
-                    if (legacyCertificateIssue != null && lastServerCandidates.isNotEmpty()) {
+                    if (lastServerCandidates.isNotEmpty()) {
                         tryAutomaticOpenVpnFailover(validation)
                     } else {
                         AlertDialog.Builder(this)

@@ -719,69 +719,33 @@ class MainActivity : ComponentActivity() {
                 val chosen = cached.filter { it.ip != lastSelectedServerIp }.ifEmpty { cached }.random()
                 selectedOpenVpnServer = chosen
                 selectedProtocol = "OpenVPN"
-                statusText.text = "Opção aleatória offline: ${chosen.country} • ${chosen.ip}. Validando perfil…"
+                statusText.text = "Opção aleatória offline: \${chosen.country} • \${chosen.ip}. Validando perfil…"
                 profileText.text = "Perfil salvo localmente; a conexão depende de o servidor ainda estar acessível."
                 selectOpenVpnServer(chosen)
             } else {
-                statusText.text = "Sem internet validada. Abrindo ${cached.size} perfis salvos no aparelho; conectar ainda depende de alcançar o servidor."
+                statusText.text = "Sem internet validada. Abrindo \${cached.size} perfis salvos no aparelho; conectar ainda depende de alcançar o servidor."
                 profileText.text = "Lista offline. Alguns servidores podem estar fora do ar ou ter mudado de configuração."
                 showServerPicker(cached)
             }
             return
         }
+
         freeVpnButton.isEnabled = false
         statusText.text = "Buscando servidores públicos disponíveis…"
-        profileText.text = "Consultando a lista pública do VPN Gate."
+        profileText.text = "Consultando a lista oficial e, se necessário, uma cópia pública de contingência."
         executor.execute {
-            var connection: HttpURLConnection? = null
             try {
-                connection = (URL("https://www.vpngate.net/api/iphone/").openConnection() as HttpURLConnection).apply {
-                    requestMethod = "GET"
-                    connectTimeout = 12000
-                    readTimeout = 15000
-                    setRequestProperty("User-Agent", "Lúmen VPN-Android/0.3")
-                }
-                val body = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-                val candidates = body.lineSequence()
-                    .filter { line ->
-                        line.isNotBlank() && !line.startsWith("#") && !line.startsWith("*") &&
-                            line.count { it == ',' } >= 14
-                    }
-                    .mapNotNull { line ->
-                        try {
-                            val fields = parseCsvRecord(line)
-                            if (fields.size < 15) return@mapNotNull null
-                            val ip = fields[1].trim()
-                            val speed = fields[4].trim().toLongOrNull() ?: 0L
-                            val country = fields[5].trim().ifBlank { "País desconhecido" }
-                            val encodedConfig = fields[14].trim()
-                            val ovpn = String(Base64.decode(encodedConfig, Base64.DEFAULT), Charsets.UTF_8)
-                            if (ip.isBlank() || !ovpn.contains("client") || !ovpn.contains("remote ")) {
-                                null
-                            } else {
-                                PublicServer(
-                                    host = fields[0].trim().trim('"').ifBlank { ip },
-                                    ip = ip,
-                                    country = country,
-                                    speed = speed,
-                                    ovpn = ovpn
-                                )
-                            }
-                        } catch (_: Exception) {
-                            null
-                        }
-                    }
-                    .filter { legacyClientCertificateIssue(it.ovpn) == null }
-                    .distinctBy { it.ip }
-                    .sortedByDescending { it.speed }
-                    .toList()
-
+                val result = fetchPublicVpnGateServers()
+                val candidates = result.first
+                val source = result.second
+                val diagnostic = result.third
                 if (candidates.isNotEmpty()) saveCachedServers(candidates)
                 runOnUiThread {
                     freeVpnButton.isEnabled = true
                     if (candidates.isEmpty()) {
-                        statusText.text = "A lista pública não retornou perfis utilizáveis. Tente novamente mais tarde."
-                        profileText.text = "Nenhum servidor foi selecionado."
+                        randomConnectAfterSearch = false
+                        statusText.text = "Nenhum perfil OpenVPN válido foi encontrado nas fontes consultadas."
+                        profileText.text = diagnostic
                     } else {
                         lastServerCandidates = candidates
                         if (randomConnectAfterSearch) {
@@ -789,79 +753,152 @@ class MainActivity : ComponentActivity() {
                             val chosen = candidates.filter { it.ip != lastSelectedServerIp }.ifEmpty { candidates }.random()
                             selectedOpenVpnServer = chosen
                             selectedProtocol = "OpenVPN"
-                            statusText.text = "Opção aleatória escolhida: ${chosen.country} • ${chosen.ip}. Validando perfil…"
-                            profileText.text = "Servidor escolhido automaticamente entre ${candidates.size} opções encontradas."
+                            statusText.text = "Opção aleatória escolhida: \${chosen.country} • \${chosen.ip}. Validando perfil…"
+                            profileText.text = "\${candidates.size} perfis compatíveis encontrados via \${source}. A disponibilidade real depende do servidor."
                             selectOpenVpnServer(chosen)
                         } else {
+                            statusText.text = "\${candidates.size} perfis OpenVPN encontrados via \${source}."
+                            profileText.text = "Escolha um servidor. A lista confirma perfis válidos, não garante que cada servidor esteja online."
                             showServerPicker(candidates)
                         }
                     }
                 }
             } catch (error: Exception) {
-                val cached = loadCachedServers()
+                val cachedNow = loadCachedServers()
                 runOnUiThread {
                     freeVpnButton.isEnabled = true
-                    if (cached.isNotEmpty()) {
-                        lastServerCandidates = cached
+                    if (cachedNow.isNotEmpty()) {
+                        lastServerCandidates = cachedNow
                         if (randomConnectAfterSearch) {
                             randomConnectAfterSearch = false
-                            val chosen = cached.filter { it.ip != lastSelectedServerIp }.ifEmpty { cached }.random()
+                            val chosen = cachedNow.filter { it.ip != lastSelectedServerIp }.ifEmpty { cachedNow }.random()
                             selectedOpenVpnServer = chosen
                             selectedProtocol = "OpenVPN"
-                            statusText.text = "Lista online indisponível. Tentando opção aleatória salva: ${chosen.country} • ${chosen.ip}."
-                            profileText.text = "Perfil local selecionado; o servidor ainda pode estar offline."
+                            statusText.text = "Fontes online indisponíveis. Tentando perfil salvo: \${chosen.country} • \${chosen.ip}."
+                            profileText.text = "Erro de consulta: \${error.message ?: "sem detalhes"}. O servidor salvo pode ter expirado."
                             selectOpenVpnServer(chosen)
                         } else {
-                            statusText.text = "Sem acesso à lista online. Mostrando ${cached.size} perfis salvos. A conexão só funcionará se houver uma rede que alcance o servidor."
-                            profileText.text = "Lista offline do aparelho. Perfis públicos podem ter expirado ou estar indisponíveis."
-                            showServerPicker(cached)
+                            statusText.text = "Não foi possível atualizar a lista online. Exibindo \${cachedNow.size} perfis salvos."
+                            profileText.text = "Diagnóstico: \${error.message ?: "erro de rede sem detalhes"}. A conexão depende de um servidor acessível."
+                            showServerPicker(cachedNow)
                         }
                     } else {
-                        statusText.text = "Falha ao buscar servidores: ${error.message ?: "verifique a internet e tente novamente"}. Nenhum perfil offline foi salvo."
-                        profileText.text = "Nenhuma conexão VPN foi iniciada."
+                        randomConnectAfterSearch = false
+                        statusText.text = "Falha ao consultar as listas públicas."
+                        profileText.text = "\${error.message ?: "Verifique a conexão com a internet."} Nenhum túnel foi iniciado."
                     }
                 }
+            } finally {
+                runOnUiThread { freeVpnButton.isEnabled = true }
+            }
+        }
+    }
+
+    /**
+     * Fetches the official VPN Gate CSV first, then a public HTTPS mirror if the
+     * official response is blocked, malformed, or contains no usable profiles.
+     * Column positions are read from the CSV header instead of assumed fixed.
+     */
+    private fun fetchPublicVpnGateServers(): Triple<List<PublicServer>, String, String> {
+        val sources = listOf(
+            "VPN Gate oficial" to "https://www.vpngate.net/api/iphone/",
+            "espelho público HTTPS" to "https://cdn.jsdelivr.net/gh/GeorgeXie2333/vpngate-list-mirror@latest/data/vpngate.csv"
+        )
+        val failures = mutableListOf<String>()
+        for ((sourceName, sourceUrl) in sources) {
+            var connection: HttpURLConnection? = null
+            try {
+                connection = (URL(sourceUrl).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = 12000
+                    readTimeout = 18000
+                    instanceFollowRedirects = true
+                    setRequestProperty("User-Agent", "Mozilla/5.0 (Android) LumenVPN/0.4")
+                    setRequestProperty("Accept", "text/csv,text/plain,*/*")
+                }
+                val body = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                val lines = body.lineSequence().toList()
+                val headerIndex = lines.indexOfFirst { line ->
+                    val normalized = line.trim().removePrefix("#").lowercase()
+                    normalized.contains("hostname") &&
+                        normalized.contains("ip") &&
+                        normalized.contains("openvpn_configdata_base64")
+                }
+                if (headerIndex < 0) {
+                    failures += "$sourceName: cabeçalho CSV não encontrado (resposta com \${body.length} caracteres)"
+                    continue
+                }
+
+                val headers = parseCsvRecord(lines[headerIndex].trim().removePrefix("#"))
+                    .map { it.trim().trim('"').removePrefix("#").lowercase() }
+                fun column(name: String, fallback: Int = -1): Int =
+                    headers.indexOfFirst { it == name.lowercase() }.takeIf { it >= 0 } ?: fallback
+
+                val hostColumn = column("hostname", 0)
+                val ipColumn = column("ip", 1)
+                val speedColumn = column("speed", 4)
+                val countryColumn = column("countrylong", 5)
+                val configColumn = column("openvpn_configdata_base64")
+                if (configColumn < 0 || ipColumn < 0 || headers.size <= maxOf(configColumn, ipColumn)) {
+                    failures += "$sourceName: colunas obrigatórias ausentes no CSV"
+                    continue
+                }
+
+                var rows = 0
+                var decoded = 0
+                var invalid = 0
+                var incompatible = 0
+                val parsed = lines.drop(headerIndex + 1).asSequence()
+                    .filter { it.isNotBlank() && !it.trimStart().startsWith("#") && !it.trimStart().startsWith("*") }
+                    .mapNotNull { line ->
+                        try {
+                            val fields = parseCsvRecord(line)
+                            if (fields.size <= maxOf(configColumn, ipColumn, hostColumn, speedColumn, countryColumn)) return@mapNotNull null
+                            rows++
+                            val ip = fields[ipColumn].trim()
+                            val encodedConfig = fields[configColumn].trim()
+                            if (ip.isBlank() || encodedConfig.isBlank()) {
+                                invalid++
+                                return@mapNotNull null
+                            }
+                            val ovpn = String(Base64.decode(encodedConfig, Base64.DEFAULT), Charsets.UTF_8)
+                            decoded++
+                            val hasRemote = Regex("(?im)^\\s*remote\\s+\\S+").containsMatchIn(ovpn)
+                            val hasClientMode = Regex("(?im)^\\s*(client|pull)(?:\\s|$)").containsMatchIn(ovpn)
+                            if (!hasRemote || !hasClientMode) {
+                                invalid++
+                                return@mapNotNull null
+                            }
+                            if (legacyClientCertificateIssue(ovpn) != null) {
+                                incompatible++
+                                return@mapNotNull null
+                            }
+                            PublicServer(
+                                host = fields[hostColumn].trim().ifBlank { ip },
+                                ip = ip,
+                                country = fields[countryColumn].trim().ifBlank { "País desconhecido" },
+                                speed = fields[speedColumn].trim().toLongOrNull() ?: 0L,
+                                ovpn = ovpn
+                            )
+                        } catch (_: Exception) {
+                            invalid++
+                            null
+                        }
+                    }
+                    .distinctBy { it.ip }
+                    .sortedByDescending { it.speed }
+                    .toList()
+
+                val diagnostic = "$sourceName: linhas examinadas=$rows, perfis decodificados=$decoded, descartados=$invalid, certificados incompatíveis=$incompatible."
+                if (parsed.isNotEmpty()) return Triple(parsed, sourceName, diagnostic)
+                failures += diagnostic
+            } catch (error: Exception) {
+                failures += "$sourceName: \${error.message ?: error.javaClass.simpleName}"
             } finally {
                 connection?.disconnect()
             }
         }
-    }
-
-    private fun saveCachedServers(servers: List<PublicServer>) {
-        runCatching {
-            val array = JSONArray()
-            servers.forEach { server ->
-                array.put(JSONObject().apply {
-                    put("host", server.host)
-                    put("ip", server.ip)
-                    put("country", server.country)
-                    put("speed", server.speed)
-                    put("ovpn", server.ovpn)
-                })
-            }
-            getSharedPreferences("lumenvpn_offline", Context.MODE_PRIVATE)
-                .edit().putString("public_openvpn_servers", array.toString()).apply()
-        }
-    }
-
-    private fun loadCachedServers(): List<PublicServer> {
-        return runCatching {
-            val raw = getSharedPreferences("lumenvpn_offline", Context.MODE_PRIVATE)
-                .getString("public_openvpn_servers", null) ?: return emptyList()
-            val array = JSONArray(raw)
-            (0 until array.length()).mapNotNull { index ->
-                val item = array.optJSONObject(index) ?: return@mapNotNull null
-                val host = item.optString("host")
-                val ip = item.optString("ip")
-                val country = item.optString("country", "País desconhecido")
-                val ovpn = item.optString("ovpn")
-                if (ip.isBlank() || ovpn.isBlank() || !ovpn.contains("remote ") || legacyClientCertificateIssue(ovpn) != null) null
-                else PublicServer(host, ip, country, item.optLong("speed", 0L), ovpn)
-            }
-                .distinctBy { it.ip }
-                .sortedByDescending { it.speed }
-                
-        }.getOrDefault(emptyList())
+        return Triple(emptyList(), "nenhuma fonte", failures.joinToString(" "))
     }
 
     /**

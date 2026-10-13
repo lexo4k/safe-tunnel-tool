@@ -339,9 +339,13 @@ class MainActivity : ComponentActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(18, 16, 18, 16)
             background = android.graphics.drawable.GradientDrawable().apply {
-                setColor(panel)
+                orientation = android.graphics.drawable.GradientDrawable.Orientation.TL_BR
+                colors = intArrayOf(
+                    android.graphics.Color.rgb(18, 38, 58),
+                    panel
+                )
                 cornerRadius = 22f
-                setStroke(1, android.graphics.Color.rgb(35, 57, 78))
+                setStroke(1, android.graphics.Color.rgb(38, 66, 88))
             }
         }
         fun label(textValue: String, size: Float, color: Int, bold: Boolean = false): TextView =
@@ -395,8 +399,15 @@ class MainActivity : ComponentActivity() {
         root.addView(brandRow)
 
         val hero = card().apply {
-            setPadding(20, 20, 20, 20)
-            val eyebrow = label("VPN COM TRANSPARÊNCIA", 11f, mint, true)
+            setPadding(22, 22, 22, 22)
+            background = android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                intArrayOf(android.graphics.Color.rgb(15, 57, 76), android.graphics.Color.rgb(15, 31, 49))
+            ).apply {
+                cornerRadius = 26f
+                setStroke(1, android.graphics.Color.rgb(34, 211, 197))
+            }
+            val eyebrow = label("●  PRIVACIDADE • CONEXÃO SEGURA", 11f, mint, true)
             addView(eyebrow)
             val headline = label("Conecte. Verifique. Navegue.", 24f, white, true).apply {
                 setPadding(0, 8, 0, 6)
@@ -495,9 +506,10 @@ class MainActivity : ComponentActivity() {
         fun selectProtocol(key: String) {
             selectedProtocol = key
             protocolRows.forEach { (protocol, item) ->
-                (item.background as? android.graphics.drawable.GradientDrawable)?.setStroke(
-                    1, if (protocol == key) mint else android.graphics.Color.rgb(50, 76, 99)
-                )
+                (item.background as? android.graphics.drawable.GradientDrawable)?.apply {
+                    setColor(if (protocol == key) android.graphics.Color.rgb(19, 57, 69) else android.graphics.Color.rgb(16, 34, 51))
+                    setStroke(if (protocol == key) 2 else 1, if (protocol == key) mint else android.graphics.Color.rgb(50, 76, 99))
+                }
             }
             statusText.text = when (key) {
                 "OpenVPN" -> "Modo OpenVPN selecionado. Escolha um servidor público ou importe um perfil .ovpn."
@@ -516,9 +528,9 @@ class MainActivity : ComponentActivity() {
                 orientation = LinearLayout.VERTICAL
                 setPadding(14, 12, 14, 12)
                 background = android.graphics.drawable.GradientDrawable().apply {
-                    setColor(android.graphics.Color.rgb(19, 39, 58))
+                    setColor(if (protocolKey == selectedProtocol) android.graphics.Color.rgb(19, 57, 69) else android.graphics.Color.rgb(16, 34, 51))
                     cornerRadius = 16f
-                    setStroke(1, if (protocolKey == selectedProtocol) mint else android.graphics.Color.rgb(50, 76, 99))
+                    setStroke(if (protocolKey == selectedProtocol) 2 else 1, if (protocolKey == selectedProtocol) mint else android.graphics.Color.rgb(50, 76, 99))
                 }
             }
             val heading = LinearLayout(this).apply {
@@ -759,9 +771,9 @@ class MainActivity : ComponentActivity() {
                             null
                         }
                     }
+                    .filter { legacyClientCertificateIssue(it.ovpn) == null }
                     .distinctBy { it.ip }
                     .sortedByDescending { it.speed }
-                    
                     .toList()
 
                 if (candidates.isNotEmpty()) saveCachedServers(candidates)
@@ -843,7 +855,7 @@ class MainActivity : ComponentActivity() {
                 val ip = item.optString("ip")
                 val country = item.optString("country", "País desconhecido")
                 val ovpn = item.optString("ovpn")
-                if (ip.isBlank() || ovpn.isBlank() || !ovpn.contains("remote ")) null
+                if (ip.isBlank() || ovpn.isBlank() || !ovpn.contains("remote ") || legacyClientCertificateIssue(ovpn) != null) null
                 else PublicServer(host, ip, country, item.optLong("speed", 0L), ovpn)
             }
                 .distinctBy { it.ip }
@@ -965,7 +977,11 @@ class MainActivity : ComponentActivity() {
     private fun tryAutomaticOpenVpnFailover(reason: String) {
         val now = System.currentTimeMillis()
         if (now - lastAutomaticFailoverAt < 4000L) return
-        val next = lastServerCandidates.firstOrNull { it.ip != lastSelectedServerIp && !attemptedOpenVpnServerIps.contains(it.ip) }
+        val next = lastServerCandidates.firstOrNull {
+            it.ip != lastSelectedServerIp &&
+                !attemptedOpenVpnServerIps.contains(it.ip) &&
+                legacyClientCertificateIssue(it.ovpn) == null
+        }
         if (next == null) {
             if (!tlsDialogShowing && !isFinishing) {
                 runOnUiThread {
@@ -1087,10 +1103,8 @@ class MainActivity : ComponentActivity() {
      * This does not weaken TLS or bypass certificate verification.
      */
     private fun legacyClientCertificateIssue(profile: String): String? {
-        val certStart = profile.indexOf("<cert>", ignoreCase = true)
-        val certEnd = profile.indexOf("</cert>", ignoreCase = true)
-        if (certStart < 0 || certEnd <= certStart) return null
-        val pem = profile.substring(certStart + 6, certEnd).trim()
+        val certMatch = Regex("(?is)<cert\\s*>(.*?)</cert\\s*>").find(profile) ?: return null
+        val pem = certMatch.groupValues[1].trim()
         if (!pem.contains("-----BEGIN CERTIFICATE-----")) return null
         return try {
             val certificate = java.security.cert.CertificateFactory

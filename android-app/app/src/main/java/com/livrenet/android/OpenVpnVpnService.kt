@@ -80,7 +80,11 @@ class OpenVpnVpnService : VpnService() {
                         }
                     }
                     if (generation == connectionGeneration && !reconnectRequested) {
-                        publishStatus("OpenVPN desconectado ou tentativas automáticas encerradas.")
+                        // Preserve the concrete native/OpenVPN error already published above.
+                        // Only show the generic message when the engine returned no useful detail.
+                        if (finalMessage.isBlank() || finalMessage == "OpenVPN desconectado.") {
+                            publishStatus("OpenVPN desconectado ou tentativas automáticas encerradas. O servidor não confirmou o túnel.")
+                        }
                         stopSelf()
                     }
                 }

@@ -414,6 +414,40 @@ class MainActivity : ComponentActivity() {
             }
             addView(headline)
             addView(label("Uma experiência simples, com diagnóstico de conexão e estado da rede sem indicadores inventados.", 14f, muted))
+        connectButton = Button(this).apply {
+            text = "⚡ CONECTAR AUTOMATICAMENTE"
+            isAllCaps = false
+            minHeight = (64 * resources.displayMetrics.density).toInt()
+            textSize = 17f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            styleButton(this, true)
+            setOnClickListener {
+                when {
+                    openVpnConnected || openVpnConnecting -> {
+                        connectAttemptId++
+                        val shouldStopService = openVpnServiceStarted || openVpnConnected
+                        openVpnConnected = false
+                        openVpnConnecting = false
+                        openVpnServiceStarted = false
+                        if (shouldStopService) OpenVpnVpnService.disconnect(this@MainActivity)
+                        statusText.text = "Cancelando conexão e encerrando o túnel…"
+                        refreshConnectButton()
+                    }
+                    connected -> disconnectTunnel()
+                    sshProxyConnected || sshProxyConnecting -> disconnectSshProxy()
+                    selectedProtocol == "OpenVPN" -> {
+                        val chosen = selectedOpenVpnServer
+                        if (chosen != null) selectOpenVpnServer(chosen) else connectRandomServer()
+                    }
+                    selectedProtocol == "WireGuard" && config != null -> requestVpnPermission()
+                    selectedProtocol == "SSH + SSL Proxy" -> statusText.text = "SSH + SSL Proxy ainda não está disponível: falta o motor de proxy TLS separado e o encaminhamento TUN."
+                    selectedProtocol in setOf("SSH Direct", "SSH + Proxy", "SSH + SSL") -> showSshProxyDialog()
+                    else -> statusText.text = "Escolha um protocolo e forneça um perfil ou servidor compatível."
+                }
+            }
+        }
+        hero.addView(connectButton, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 18 })
+
         }
         root.addView(hero, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 22 })
 
@@ -435,11 +469,11 @@ class MainActivity : ComponentActivity() {
 
         val serverCard = card()
         serverCard.addView(label("🌐  Servidores ao redor do mundo", 17f, white, true))
-        serverCard.addView(label("Consulte a lista pública e escolha um perfil disponível. A disponibilidade varia por país e horário.", 13f, muted).apply {
+        serverCard.addView(label("A conexão automática tenta perfis públicos compatíveis e troca de servidor se uma tentativa falhar. Servidores gratuitos podem ficar offline.", 13f, muted).apply {
             setPadding(0, 6, 0, 12)
         })
         freeVpnButton = Button(this).apply {
-            text = "Buscar servidores OpenVPN"
+            text = "Atualizar lista de servidores"
             styleButton(this, true)
             setOnClickListener { findFreeVpnGateServers() }
         }
@@ -467,33 +501,7 @@ class MainActivity : ComponentActivity() {
         }
         serverCard.addView(testVpnPermissionButton, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 8 })
 
-        connectButton = Button(this).apply {
-            text = "Conectar"
-            isEnabled = false
-            styleButton(this, true)
-            setOnClickListener {
-                when {
-                    openVpnConnected || openVpnConnecting -> {
-                        connectAttemptId++
-                        val shouldStopService = openVpnServiceStarted || openVpnConnected
-                        openVpnConnected = false
-                        openVpnConnecting = false
-                        openVpnServiceStarted = false
-                        if (shouldStopService) OpenVpnVpnService.disconnect(this@MainActivity)
-                        statusText.text = "Cancelando conexão e encerrando o túnel…"
-                        refreshConnectButton()
-                    }
-                    connected -> disconnectTunnel()
-                    sshProxyConnected || sshProxyConnecting -> disconnectSshProxy()
-                    selectedProtocol == "OpenVPN" && selectedOpenVpnServer != null -> selectOpenVpnServer(selectedOpenVpnServer!!)
-                    selectedProtocol == "WireGuard" && config != null -> requestVpnPermission()
-                    selectedProtocol == "SSH + SSL Proxy" -> statusText.text = "SSH + SSL Proxy ainda não está disponível: falta o motor de proxy TLS separado e o encaminhamento TUN."
-                    selectedProtocol in setOf("SSH Direct", "SSH + Proxy", "SSH + SSL") -> showSshProxyDialog()
-                    else -> statusText.text = "Escolha um protocolo e forneça um perfil ou servidor compatível."
-                }
-            }
-        }
-        serverCard.addView(connectButton, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 10 })
+
         root.addView(serverCard)
 
         val modesCard = card()
@@ -1275,14 +1283,18 @@ class MainActivity : ComponentActivity() {
         if (!::connectButton.isInitialized) return
         val active = connected || openVpnConnected || sshProxyConnected
         connectButton.text = when {
-            active -> "Desconectar"
+            active -> "■  DESCONECTAR VPN"
             openVpnConnecting || sshProxyConnecting -> "Cancelar conexão"
-            else -> "Conectar"
+            selectedProtocol == "OpenVPN" && selectedOpenVpnServer == null -> "⚡ CONECTAR AUTOMATICAMENTE"
+            else -> "🔐 CONECTAR"
         }
-        connectButton.isEnabled = active || openVpnConnecting || sshProxyConnecting || selectedOpenVpnServer != null || config != null || selectedProtocol in setOf("SSH Direct", "SSH + Proxy", "SSH + SSL")
+        connectButton.isEnabled = active || openVpnConnecting || sshProxyConnecting ||
+            selectedProtocol == "OpenVPN" || selectedOpenVpnServer != null || config != null ||
+            selectedProtocol in setOf("SSH Direct", "SSH + Proxy", "SSH + SSL")
         connectButton.contentDescription = when {
             active -> "Desconectar a VPN"
             openVpnConnecting || sshProxyConnecting -> "Cancelar tentativa de conexão"
+            selectedProtocol == "OpenVPN" && selectedOpenVpnServer == null -> "Buscar servidores públicos compatíveis e conectar automaticamente"
             else -> selectedOpenVpnServer?.let { "Conectar ao servidor ${it.country}" } ?: "Conectar à VPN"
         }
     }

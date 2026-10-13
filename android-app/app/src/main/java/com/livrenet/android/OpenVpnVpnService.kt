@@ -253,7 +253,7 @@ class OpenVpnVpnService : VpnService() {
             Notification.Builder(this)
         }
         return builder
-            .setSmallIcon(android.R.drawable.stat_sys_warning)
+            .setSmallIcon(android.R.drawable.ic_lock_lock)
             .setContentTitle("Lúmen VPN • OpenVPN")
             .setContentText(text)
             .setOngoing(true)

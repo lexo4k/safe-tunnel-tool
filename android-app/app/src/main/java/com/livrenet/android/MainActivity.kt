@@ -71,10 +71,12 @@ class MainActivity : ComponentActivity() {
             val message = intent?.getStringExtra(OpenVpnVpnService.EXTRA_STATUS) ?: return
             val lower = message.lowercase()
             val upper = message.uppercase()
+            val explicitTerminalFailure = upper.startsWith("[OPENVPN_FAILED]")
+            val diagnosticMessage = message.removePrefix("[OPENVPN_FAILED]").trim()
             val connectionEstablished =
                 (upper.contains("CONNECTED") || upper.contains("CONNECTION_ESTABLISHED") || upper.contains("TUNNEL UP")) &&
                     listOf("DISCONNECTED", "NOT CONNECTED", "CONNECTING", "UNCONNECTED").none { upper.contains(it) }
-            val connectionEnded = listOf(
+            val connectionEnded = explicitTerminalFailure || listOf(
                 "DISCONNECTED", "DESCONECTADO", "DESCONECTANDO", "CONNECTION FAILED",
                 "CONNECTION CANCELED", "CONNECTION CANCELLED", "AUTHENTICATION FAILED",
                 "TLS ERROR", "TUNNEL CLOSED", "SOCKET CLOSED", "NETWORK UNREACHABLE",
@@ -116,7 +118,7 @@ class MainActivity : ComponentActivity() {
                 }
                 refreshConnectButton()
             }
-            val tlsOrAuthFailure = listOf(
+            val tlsOrAuthFailure = explicitTerminalFailure || listOf(
                 "unsupportedcertversion", "invalid peer certificate", "certificate verify failed",
                 "certificate verification failed", "tls handshake", "tls error",
                 "handshake failed", "no shared cipher", "peer certificate", "authentication failed",
@@ -125,10 +127,10 @@ class MainActivity : ComponentActivity() {
             if (tlsOrAuthFailure) {
                 val canFailOver = selectedProtocol == "OpenVPN" && selectedOpenVpnServer != null && lastServerCandidates.isNotEmpty()
                 if (canFailOver) {
-                    tryAutomaticOpenVpnFailover(message)
+                    tryAutomaticOpenVpnFailover(diagnosticMessage)
                 } else if (!tlsDialogShowing) {
                     runOnUiThread {
-                        statusText.text = "Falha real do OpenVPN: $message. A validação de certificados foi mantida; confira o perfil ou tente outro servidor."
+                        statusText.text = "Falha real do OpenVPN: $diagnosticMessage. A validação de certificados foi mantida; confira o perfil ou tente outro servidor."
                     }
                     val alternatives = lastServerCandidates.filter { it.ip != lastSelectedServerIp }
                     if (!isFinishing) showTlsCompatibilityDialog(alternatives)

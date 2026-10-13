@@ -168,7 +168,7 @@ class SshVpnService : VpnService() {
         )
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
             Notification.Builder(this, CHANNEL_ID) else Notification.Builder(this)
-        return builder.setSmallIcon(android.R.drawable.stat_sys_warning)
+        return builder.setSmallIcon(android.R.drawable.ic_lock_lock)
             .setContentTitle("Lúmen VPN • SSH")
             .setContentText(text)
             .setOngoing(running || !text.contains("desconect", true))

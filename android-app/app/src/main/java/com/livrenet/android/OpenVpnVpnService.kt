@@ -64,7 +64,15 @@ class OpenVpnVpnService : VpnService() {
 
                         if (!reconnectRequested || generation != connectionGeneration) break
                         if (isNonRetryableFailure(finalMessage) || retry >= MAX_RECONNECTS) {
-                            publishStatus(finalMessage)
+                            // Give MainActivity a concrete, machine-readable terminal failure so it can
+                            // try the next public profile. Keep the service alive briefly for that handoff.
+                            publishStatus("[OPENVPN_FAILED] $finalMessage")
+                            try {
+                                Thread.sleep(8000L)
+                            } catch (_: InterruptedException) {
+                                Thread.currentThread().interrupt()
+                            }
+                            if (generation != connectionGeneration) break
                             reconnectRequested = false
                             break
                         }

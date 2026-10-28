@@ -9,6 +9,7 @@
 - [ ] Run automated tests and verify mobile/desktop layouts
 
 ## Real Android VPN
+- [ ] Provide a direct path from the web dashboard to compatible native VPN clients without claiming a browser tunnel
 - [x] Document native integration architecture and acceptance criteria in [docs/ANDROID_VPN_IMPLEMENTATION.md](docs/ANDROID_VPN_IMPLEMENTATION.md)
 - [x] Create a separate Android Gradle/Kotlin application module
 - [x] Integrate the official WireGuard Android tunnel implementation

@@ -1,7 +1,7 @@
 import { ExternalLink, ShieldCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
-export function NativeClients({ protocol }: { protocol?: 'WireGuard' | 'OpenVPN' }) {
+export function NativeClients({ protocol }: { protocol?: 'WireGuard' | 'OpenVPN' | undefined }) {
   const clients = [
     { name: 'WireGuard', url: 'https://www.wireguard.com/install/' },
     { name: 'OpenVPN', url: 'https://openvpn.net/client/' },

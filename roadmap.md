@@ -6,10 +6,10 @@
 - [x] Local-only profile summary and superficial validation
 - [x] Connectivity checklist with web/native limitations
 - [x] Responsible low-cost internet guide
-- [ ] Run automated tests and verify mobile/desktop layouts
+- [x] Run routing tests and verify the native-client handoff on desktop and at the user's mobile viewport
 
 ## Real Android VPN
-- [ ] Provide a direct path from the web dashboard to compatible native VPN clients without claiming a browser tunnel
+- [x] Provide a direct path from the web dashboard to compatible native VPN clients without claiming a browser tunnel
 - [x] Document native integration architecture and acceptance criteria in [docs/ANDROID_VPN_IMPLEMENTATION.md](docs/ANDROID_VPN_IMPLEMENTATION.md)
 - [x] Create a separate Android Gradle/Kotlin application module
 - [x] Integrate the official WireGuard Android tunnel implementation

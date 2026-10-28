@@ -4,6 +4,7 @@ import { ArrowRight, Activity, Check, CircleHelp, FileKey2, Globe2, Info, Layout
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { useLivreNet } from './state';
+import { NativeClients } from './native-clients';
 
 export const navigation = [
   { to: '/' as const, label: 'Visão geral', mobile: 'Início', icon: LayoutDashboard },
@@ -21,7 +22,7 @@ export function PageHeading({ title, subtitle, action }: { title: string; subtit
 export function Notice({ children }: { children?: ReactNode }) { return <div className="notice"><Info size={17} className="mt-0.5 text-primary"/><div>{children ?? <><strong>VPN não cria internet.</strong> Você precisa de internet móvel ou Wi-Fi autorizado e de um servidor VPN autorizado. Este painel web não inicia um túnel VPN.</>}</div></div>; }
 export function ConnectionButton() {
   const [open,setOpen] = useState(false);
-  return <><Button size="lg" onClick={() => setOpen(true)}><Power size={16}/>Conectar<span className="ml-2 text-[9px] font-normal opacity-80">PROTÓTIPO</span></Button><Dialog open={open} onOpenChange={setOpen}><DialogContent><DialogTitle>O túnel não foi iniciado</DialogTitle><DialogDescription className="leading-7">O LivreNet é um painel web, não um cliente VPN. O navegador não pode criar uma VPN de sistema nem solicitar permissões VpnService no Android.</DialogDescription><Notice>Para conectar de verdade, use um app Android nativo com <strong>VpnService</strong> ou um cliente VPN compatível, internet subjacente e um servidor autorizado. Importar um perfil aqui não inicia conexão.</Notice><Button asChild variant="outline"><Link to="/perfis" onClick={() => setOpen(false)}><FileKey2 size={16}/>Gerenciar perfil local</Link></Button></DialogContent></Dialog></>;
+   return <><Button size="lg" onClick={() => setOpen(true)}><Power size={16}/>Conectar em outro app</Button><Dialog open={open} onOpenChange={setOpen}><DialogContent><DialogTitle>Conexão por um cliente VPN</DialogTitle><DialogDescription className="leading-7">O LivreNet é um painel web. O túnel precisa ser criado por um aplicativo instalado no seu dispositivo; nenhum túnel foi iniciado aqui.</DialogDescription><NativeClients/><Button asChild variant="outline"><Link to="/perfis" onClick={() => setOpen(false)}><FileKey2 size={16}/>Gerenciar perfil local</Link></Button></DialogContent></Dialog></>;
 }
 export function useNetwork() {
   const [online, setOnline] = useState<boolean | null>(null);

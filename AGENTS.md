@@ -13,3 +13,4 @@
 - Use separate TanStack leaf routes for LivreNet sections and a shared shell in the root route so navigation preserves session-only profile summaries.
 - Keep visual roles and responsive patterns in src/styles.css and use existing design-system controls for consistent accessible interactions.
 - Connectivity tests may only reach the app's own origin; never contact endpoints supplied in imported profiles because this web prototype cannot establish or measure VPN tunnels.
+- Keep native-client handoff in a shared browser-safe component with official external installation links only; it must never transfer profile contents or infer tunnel status from another app.

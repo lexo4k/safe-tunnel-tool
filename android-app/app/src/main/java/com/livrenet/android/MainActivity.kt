@@ -22,12 +22,15 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
+import androidx.core.content.ContextCompat
 import com.wireguard.android.backend.GoBackend
 import com.wireguard.android.backend.Tunnel
 import com.wireguard.config.Config
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import android.widget.EditText
+import android.text.InputType
 import java.util.concurrent.Executors
 import org.json.JSONArray
 import org.json.JSONObject
@@ -46,23 +49,34 @@ class MainActivity : ComponentActivity() {
     @Volatile private var connectAfterPermission = false
     @Volatile private var openVpnProfileAfterPermission: String? = null
     @Volatile private var lastServerCandidates: List<PublicServer> = emptyList()
+    @Volatile private var randomConnectAfterSearch = false
     @Volatile private var lastSelectedServerIp: String? = null
+    private val attemptedOpenVpnServerIps = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    @Volatile private var lastAutomaticFailoverAt: Long = 0L
     @Volatile private var tlsDialogShowing = false
     @Volatile private var openVpnConnected = false
     @Volatile private var openVpnConnecting = false
     @Volatile private var openVpnServiceStarted = false
     @Volatile private var connectAttemptId = 0
     @Volatile private var selectedOpenVpnServer: PublicServer? = null
+    @Volatile private var selectedProtocol: String = "OpenVPN"
+    @Volatile private var sshProxyConnected = false
+    @Volatile private var sshProxyConnecting = false
+    @Volatile private var sshProxy: SshSocksProxy? = null
+    @Volatile private var pendingSshStart: Bundle? = null
+    @Volatile private var vpnPermissionTestPending = false
 
     private val openVpnStatusReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val message = intent?.getStringExtra(OpenVpnVpnService.EXTRA_STATUS) ?: return
             val lower = message.lowercase()
             val upper = message.uppercase()
+            val explicitTerminalFailure = upper.startsWith("[OPENVPN_FAILED]")
+            val diagnosticMessage = message.removePrefix("[OPENVPN_FAILED]").trim()
             val connectionEstablished =
                 (upper.contains("CONNECTED") || upper.contains("CONNECTION_ESTABLISHED") || upper.contains("TUNNEL UP")) &&
                     listOf("DISCONNECTED", "NOT CONNECTED", "CONNECTING", "UNCONNECTED").none { upper.contains(it) }
-            val connectionEnded = listOf(
+            val connectionEnded = explicitTerminalFailure || listOf(
                 "DISCONNECTED", "DESCONECTADO", "DESCONECTANDO", "CONNECTION FAILED",
                 "CONNECTION CANCELED", "CONNECTION CANCELLED", "AUTHENTICATION FAILED",
                 "TLS ERROR", "TUNNEL CLOSED", "SOCKET CLOSED", "NETWORK UNREACHABLE",
@@ -71,6 +85,7 @@ class MainActivity : ComponentActivity() {
             ).any { upper.contains(it) }
 
             if (connectionEstablished) {
+                attemptedOpenVpnServerIps.clear()
                 openVpnConnected = true
                 openVpnConnecting = false
                 runOnUiThread {
@@ -103,18 +118,55 @@ class MainActivity : ComponentActivity() {
                 }
                 refreshConnectButton()
             }
-            val tlsOrAuthFailure = listOf(
+            val tlsOrAuthFailure = explicitTerminalFailure || listOf(
                 "unsupportedcertversion", "invalid peer certificate", "certificate verify failed",
                 "certificate verification failed", "tls handshake", "tls error",
                 "handshake failed", "no shared cipher", "peer certificate", "authentication failed",
                 "auth_failed", "private key", "unsupported protocol"
             ).any { lower.contains(it) }
-            if (tlsOrAuthFailure && !tlsDialogShowing) {
-                runOnUiThread {
-                    statusText.text = "Falha de compatibilidade TLS, certificado ou autenticação. A validação de segurança foi mantida; tente outro servidor ou perfil."
+            if (tlsOrAuthFailure) {
+                val canFailOver = selectedProtocol == "OpenVPN" && selectedOpenVpnServer != null && lastServerCandidates.isNotEmpty()
+                if (canFailOver) {
+                    tryAutomaticOpenVpnFailover(diagnosticMessage)
+                } else if (!tlsDialogShowing) {
+                    runOnUiThread {
+                        statusText.text = "Falha real do OpenVPN: $diagnosticMessage. A validação de certificados foi mantida; confira o perfil ou tente outro servidor."
+                    }
+                    val alternatives = lastServerCandidates.filter { it.ip != lastSelectedServerIp }
+                    if (!isFinishing) showTlsCompatibilityDialog(alternatives)
                 }
-                val alternatives = lastServerCandidates.filter { it.ip != lastSelectedServerIp }
-                if (!isFinishing) showTlsCompatibilityDialog(alternatives)
+            }
+        }
+    }
+
+    private val sshVpnStatusReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val message = intent?.getStringExtra(SshVpnService.EXTRA_STATUS) ?: return
+            when {
+                message.startsWith("[CONNECTED]") -> {
+                    sshProxyConnected = true
+                    sshProxyConnecting = false
+                    runOnUiThread {
+                        statusText.setTextColor(android.graphics.Color.rgb(74, 222, 128))
+                        statusText.text = message.removePrefix("[CONNECTED] ").trim()
+                        internetText.text = "Túnel SSH TCP ativo • UDP/DNS pode não funcionar"
+                        refreshConnectButton()
+                    }
+                }
+                message.startsWith("[CONNECTING]") -> {
+                    sshProxyConnecting = true
+                    runOnUiThread { statusText.text = message.removePrefix("[CONNECTING] ").trim(); refreshConnectButton() }
+                }
+                message.startsWith("[ERROR]") -> {
+                    sshProxyConnected = false
+                    sshProxyConnecting = false
+                    runOnUiThread {
+                        statusText.setTextColor(android.graphics.Color.rgb(248, 113, 113))
+                        statusText.text = message.removePrefix("[ERROR] ").trim()
+                        internetText.text = "Túnel SSH não conectado"
+                        refreshConnectButton()
+                    }
+                }
             }
         }
     }
@@ -128,7 +180,7 @@ class MainActivity : ComponentActivity() {
     )
 
     private val tunnel = object : Tunnel {
-        override fun getName(): String = "LivreNet"
+        override fun getName(): String = "Lúmen VPN"
         override fun onStateChange(newState: Tunnel.State) {
             runOnUiThread {
                 connected = newState == Tunnel.State.UP
@@ -147,6 +199,7 @@ class MainActivity : ComponentActivity() {
             connectAttemptId++
             stream.use { config = Config.parse(it) }
             selectedOpenVpnServer = null
+            selectedProtocol = "WireGuard"
             profileText.text = "Perfil WireGuard carregado na memória do app."
             statusText.text = "Perfil pronto. Toque em Conectar."
             refreshConnectButton()
@@ -159,16 +212,68 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private val openVpnProfilePicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        try {
+            val profile = contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+                ?: throw IllegalArgumentException("Não foi possível ler o arquivo.")
+            val remoteMatch = Regex("(?im)^\\s*remote\\s+([^\\s#]+)(?:\\s+\\d+)?").find(profile)
+                ?: throw IllegalArgumentException("O perfil não contém uma linha 'remote host porta'.")
+            val host = remoteMatch.groupValues[1].trim()
+            if (!profile.contains("<client") && !profile.contains("client")) {
+                throw IllegalArgumentException("O arquivo não parece ser um perfil OpenVPN válido.")
+            }
+            val server = PublicServer(
+                host = host,
+                ip = host,
+                country = "Perfil importado",
+                speed = 0L,
+                ovpn = profile
+            )
+            selectedOpenVpnServer = server
+            selectedProtocol = "OpenVPN"
+            lastSelectedServerIp = null
+            profileText.text = "Perfil OpenVPN importado: $host. Será validado antes da conexão."
+            statusText.text = "Perfil importado. Toque em Conectar para validar e iniciar."
+            refreshConnectButton()
+        } catch (error: Exception) {
+            selectedOpenVpnServer = null
+            profileText.text = "Nenhum perfil OpenVPN importado."
+            statusText.text = "Não foi possível importar: ${error.message ?: "arquivo inválido"}"
+            refreshConnectButton()
+        }
+    }
+
     private val vpnPermission = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        if (vpnPermissionTestPending) {
+            vpnPermissionTestPending = false
+            val granted = result.resultCode == Activity.RESULT_OK
+            statusText.text = if (granted) {
+                "Permissão VPN concedida pelo Android. Nenhum túnel foi iniciado."
+            } else {
+                "Permissão VPN não concedida. Nenhum túnel foi iniciado."
+            }
+            internetText.text = if (granted) {
+                "Permissão VPN concedida • túnel não iniciado"
+            } else {
+                "Permissão VPN não concedida"
+            }
+            refreshConnectButton()
+            return@registerForActivityResult
+        }
         val pendingOpenVpnProfile = openVpnProfileAfterPermission
         if (result.resultCode == Activity.RESULT_OK) {
-            if (pendingOpenVpnProfile != null) {
+            val pendingSsh = pendingSshStart
+            if (pendingSsh != null) {
+                pendingSshStart = null
+                startSshVpnService(pendingSsh)
+            } else if (pendingOpenVpnProfile != null) {
                 openVpnProfileAfterPermission = null
                 openVpnConnecting = true
                 openVpnServiceStarted = true
                 refreshConnectButton()
                 statusText.text = "Permissão concedida. Iniciando o núcleo OpenVPN 3…"
-                profileText.text = "Conectando diretamente pelo serviço VPN do LivreNet."
+                profileText.text = "Conectando diretamente pelo serviço VPN do Lúmen VPN."
                 OpenVpnVpnService.connect(this, pendingOpenVpnProfile)
             } else if (connectAfterPermission) {
                 connectAfterPermission = false
@@ -176,9 +281,11 @@ class MainActivity : ComponentActivity() {
             }
         } else {
             openVpnProfileAfterPermission = null
+            pendingSshStart = null
             connectAfterPermission = false
             connectAttemptId++
             openVpnConnecting = false
+            sshProxyConnecting = false
             openVpnServiceStarted = false
             statusText.text = "Permissão VPN não concedida. Nenhum túnel foi iniciado."
             refreshConnectButton()
@@ -194,10 +301,18 @@ class MainActivity : ComponentActivity() {
             @Suppress("DEPRECATION")
             registerReceiver(openVpnStatusReceiver, filter)
         }
+        val sshFilter = IntentFilter(SshVpnService.ACTION_STATUS)
+        if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(sshVpnStatusReceiver, sshFilter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("DEPRECATION")
+            registerReceiver(sshVpnStatusReceiver, sshFilter)
+        }
     }
 
     override fun onStop() {
         runCatching { unregisterReceiver(openVpnStatusReceiver) }
+        runCatching { unregisterReceiver(sshVpnStatusReceiver) }
         super.onStop()
     }
 
@@ -224,9 +339,13 @@ class MainActivity : ComponentActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(18, 16, 18, 16)
             background = android.graphics.drawable.GradientDrawable().apply {
-                setColor(panel)
+                orientation = android.graphics.drawable.GradientDrawable.Orientation.TL_BR
+                colors = intArrayOf(
+                    android.graphics.Color.rgb(18, 38, 58),
+                    panel
+                )
                 cornerRadius = 22f
-                setStroke(1, android.graphics.Color.rgb(35, 57, 78))
+                setStroke(1, android.graphics.Color.rgb(38, 66, 88))
             }
         }
         fun label(textValue: String, size: Float, color: Int, bold: Boolean = false): TextView =
@@ -267,12 +386,12 @@ class MainActivity : ComponentActivity() {
             gravity = Gravity.CENTER_VERTICAL
         }
         val logo = ImageView(this).apply {
-            setImageResource(R.drawable.livrenet_logo)
-            contentDescription = "Logotipo LivreNet, proteção e conexão global"
+            setImageResource(R.drawable.lumen_vpn_logo)
+            contentDescription = "Logotipo Lúmen VPN, proteção e conexão global"
             layoutParams = LinearLayout.LayoutParams(68, 68).apply { rightMargin = 14 }
         }
         val brandText = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        brandText.addView(label("LIVRENET", 26f, white, true))
+        brandText.addView(label("LÚMEN VPN", 26f, white, true))
         brandText.addView(label("PROTEÇÃO • CONEXÃO GLOBAL", 11f, mint, true))
         brandText.addView(label("Versão ${BuildConfig.VERSION_NAME} • build ${BuildConfig.GIT_SHA}", 11f, muted))
         brandRow.addView(logo)
@@ -280,14 +399,55 @@ class MainActivity : ComponentActivity() {
         root.addView(brandRow)
 
         val hero = card().apply {
-            setPadding(20, 20, 20, 20)
-            val eyebrow = label("VPN COM TRANSPARÊNCIA", 11f, mint, true)
+            setPadding(22, 22, 22, 22)
+            background = android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                intArrayOf(android.graphics.Color.rgb(15, 57, 76), android.graphics.Color.rgb(15, 31, 49))
+            ).apply {
+                cornerRadius = 26f
+                setStroke(1, android.graphics.Color.rgb(34, 211, 197))
+            }
+            val eyebrow = label("●  PRIVACIDADE • CONEXÃO SEGURA", 11f, mint, true)
             addView(eyebrow)
             val headline = label("Conecte. Verifique. Navegue.", 24f, white, true).apply {
                 setPadding(0, 8, 0, 6)
             }
             addView(headline)
             addView(label("Uma experiência simples, com diagnóstico de conexão e estado da rede sem indicadores inventados.", 14f, muted))
+        connectButton = Button(this).apply {
+            text = "⚡ CONECTAR AUTOMATICAMENTE"
+            isAllCaps = false
+            minHeight = (64 * resources.displayMetrics.density).toInt()
+            textSize = 17f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            styleButton(this, true)
+            setOnClickListener {
+                when {
+                    openVpnConnected || openVpnConnecting -> {
+                        connectAttemptId++
+                        val shouldStopService = openVpnServiceStarted || openVpnConnected
+                        openVpnConnected = false
+                        openVpnConnecting = false
+                        openVpnServiceStarted = false
+                        if (shouldStopService) OpenVpnVpnService.disconnect(this@MainActivity)
+                        statusText.text = "Cancelando conexão e encerrando o túnel…"
+                        refreshConnectButton()
+                    }
+                    connected -> disconnectTunnel()
+                    sshProxyConnected || sshProxyConnecting -> disconnectSshProxy()
+                    selectedProtocol == "OpenVPN" -> {
+                        val chosen = selectedOpenVpnServer
+                        if (chosen != null) selectOpenVpnServer(chosen) else connectRandomServer()
+                    }
+                    selectedProtocol == "WireGuard" && config != null -> requestVpnPermission()
+                    selectedProtocol == "SSH + SSL Proxy" -> statusText.text = "SSH + SSL Proxy ainda não está disponível: falta o motor de proxy TLS separado e o encaminhamento TUN."
+                    selectedProtocol in setOf("SSH Direct", "SSH + Proxy", "SSH + SSL") -> showSshProxyDialog()
+                    else -> statusText.text = "Escolha um protocolo e forneça um perfil ou servidor compatível."
+                }
+            }
+        }
+        hero.addView(connectButton, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 18 })
+
         }
         root.addView(hero, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 22 })
 
@@ -309,39 +469,39 @@ class MainActivity : ComponentActivity() {
 
         val serverCard = card()
         serverCard.addView(label("🌐  Servidores ao redor do mundo", 17f, white, true))
-        serverCard.addView(label("Consulte a lista pública e escolha um perfil disponível. A disponibilidade varia por país e horário.", 13f, muted).apply {
+        serverCard.addView(label("A conexão automática tenta perfis públicos compatíveis e troca de servidor se uma tentativa falhar. Servidores gratuitos podem ficar offline.", 13f, muted).apply {
             setPadding(0, 6, 0, 12)
         })
         freeVpnButton = Button(this).apply {
-            text = "Buscar servidores OpenVPN"
+            text = "Atualizar lista de servidores"
             styleButton(this, true)
             setOnClickListener { findFreeVpnGateServers() }
         }
         serverCard.addView(freeVpnButton, matchWidth())
-        connectButton = Button(this).apply {
-            text = "Conectar"
-            isEnabled = false
-            styleButton(this, true)
+
+        val randomVpnButton = Button(this).apply {
+            text = "Conectar a servidor aleatório"
+            styleButton(this)
+            setOnClickListener { connectRandomServer() }
+        }
+        serverCard.addView(randomVpnButton, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 8 })
+        val importOpenVpnButton = Button(this).apply {
+            text = "Importar perfil OpenVPN (.ovpn)"
+            styleButton(this)
             setOnClickListener {
-                when {
-                    openVpnConnected || openVpnConnecting -> {
-                        connectAttemptId++
-                        val shouldStopService = openVpnServiceStarted || openVpnConnected
-                        openVpnConnected = false
-                        openVpnConnecting = false
-                        openVpnServiceStarted = false
-                        if (shouldStopService) OpenVpnVpnService.disconnect(this@MainActivity)
-                        statusText.text = "Cancelando conexão e encerrando o túnel…"
-                        refreshConnectButton()
-                    }
-                    connected -> disconnectTunnel()
-                    selectedOpenVpnServer != null -> selectOpenVpnServer(selectedOpenVpnServer!!)
-                    config != null -> requestVpnPermission()
-                    else -> statusText.text = "Toque em Buscar servidores OpenVPN ou importe um perfil WireGuard válido."
-                }
+                openVpnProfilePicker.launch(arrayOf("application/x-openvpn-profile", "application/octet-stream", "text/plain", "*/*"))
             }
         }
-        serverCard.addView(connectButton, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 10 })
+        serverCard.addView(importOpenVpnButton, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 8 })
+
+        val testVpnPermissionButton = Button(this).apply {
+            text = "Testar permissão VPN do Android"
+            styleButton(this)
+            setOnClickListener { requestVpnPermissionTest() }
+        }
+        serverCard.addView(testVpnPermissionButton, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 8 })
+
+
         root.addView(serverCard)
 
         val modesCard = card()
@@ -350,14 +510,35 @@ class MainActivity : ComponentActivity() {
             setPadding(0, 6, 0, 12)
         })
 
-        fun modeRow(title: String, description: String, state: String, available: Boolean) {
+        val protocolRows = mutableMapOf<String, LinearLayout>()
+        fun selectProtocol(key: String) {
+            selectedProtocol = key
+            protocolRows.forEach { (protocol, item) ->
+                (item.background as? android.graphics.drawable.GradientDrawable)?.apply {
+                    setColor(if (protocol == key) android.graphics.Color.rgb(19, 57, 69) else android.graphics.Color.rgb(16, 34, 51))
+                    setStroke(if (protocol == key) 2 else 1, if (protocol == key) mint else android.graphics.Color.rgb(50, 76, 99))
+                }
+            }
+            statusText.text = when (key) {
+                "OpenVPN" -> "Modo OpenVPN selecionado. Escolha um servidor público ou importe um perfil .ovpn."
+                "WireGuard" -> "Modo WireGuard selecionado. Importe um perfil .conf válido para conectar."
+                "SSH Direct" -> "SSH Direct selecionado. O app inicia o serviço VPN/TUN para encaminhar TCP pelo SSH; UDP/DNS têm limitações do transporte SSH."
+                "SSH + Proxy" -> "SSH + Proxy selecionado. Configure um servidor SSH autorizado; o serviço VPN encaminha TCP pelo SOCKS5 local."
+                "SSH + SSL" -> "SSH + SSL selecionado. Exige endpoint SSH-over-TLS com certificado válido; encaminhamento TUN para TCP, com limitações de UDP/DNS."
+                "SSH + SSL Proxy" -> "SSH + SSL Proxy ainda não tem um motor de proxy TLS separado nem encaminhamento TUN completo."
+                else -> "Esse modo ainda não tem motor integrado."
+            }
+            refreshConnectButton()
+        }
+
+        fun modeRow(title: String, description: String, state: String, available: Boolean, protocolKey: String? = null) {
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(14, 12, 14, 12)
                 background = android.graphics.drawable.GradientDrawable().apply {
-                    setColor(android.graphics.Color.rgb(19, 39, 58))
+                    setColor(if (protocolKey == selectedProtocol) android.graphics.Color.rgb(19, 57, 69) else android.graphics.Color.rgb(16, 34, 51))
                     cornerRadius = 16f
-                    setStroke(1, if (available) mint else android.graphics.Color.rgb(50, 76, 99))
+                    setStroke(if (protocolKey == selectedProtocol) 2 else 1, if (protocolKey == selectedProtocol) mint else android.graphics.Color.rgb(50, 76, 99))
                 }
             }
             val heading = LinearLayout(this).apply {
@@ -368,15 +549,21 @@ class MainActivity : ComponentActivity() {
             heading.addView(label(state, 10f, if (available) mint else muted, true))
             row.addView(heading)
             row.addView(label(description, 12f, muted).apply { setPadding(0, 5, 0, 0) })
+            if (protocolKey != null) {
+                protocolRows[protocolKey] = row
+                row.isClickable = true
+                row.isFocusable = true
+                row.setOnClickListener { selectProtocol(protocolKey) }
+            }
             modesCard.addView(row, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 8 })
         }
 
-        modeRow("OpenVPN • MOTOR PRINCIPAL", "Núcleo OpenVPN 3 integrado ao app. Certificados ou servidores públicos incompatíveis podem ser recusados com segurança; escolha outro servidor se isso ocorrer.", "INTEGRADO", true)
-        modeRow("SSH Direct", "Ainda precisa de motor SSH e servidor autorizado.", "EM DESENVOLVIMENTO", false)
-        modeRow("SSH + Proxy", "Ainda precisa de motor SSH/Proxy e servidor autorizado.", "EM DESENVOLVIMENTO", false)
-        modeRow("SSH + SSL", "Ainda precisa de transporte TLS/SSH e servidor autorizado.", "EM DESENVOLVIMENTO", false)
-        modeRow("SSH + SSL Proxy", "Ainda precisa de transporte TLS/SSH, proxy e servidor autorizado.", "EM DESENVOLVIMENTO", false)
-        modeRow("WireGuard • OPÇÃO ALTERNATIVA", "Motor integrado para perfis WireGuard .conf válidos. Não conecta diretamente aos perfis OpenVPN da lista pública.", "INTEGRADO", true)
+        modeRow("OpenVPN • MOTOR PRINCIPAL", "Servidor público da lista ou perfil .ovpn importado. O app valida o perfil antes de iniciar; certificado e servidor precisam ser compatíveis.", "INTEGRADO", true, "OpenVPN")
+        modeRow("SSH Direct", "Serviço Android VPN/TUN + HEV encaminha conexões TCP por SSH. UDP/QUIC e DNS podem falhar.", "TUN • TCP", true, "SSH Direct")
+        modeRow("SSH + Proxy", "Túnel Android TUN para TCP via SOCKS5/SSH. Requer servidor autorizado, senha e known_hosts confiável.", "TUN • TCP", true, "SSH + Proxy")
+        modeRow("SSH + SSL", "TUN para TCP via SSH encapsulado em TLS; endpoint precisa suportar TLS-wrapped SSH e certificado válido.", "TUN • TCP", true, "SSH + SSL")
+        modeRow("SSH + SSL Proxy", "Proxy TLS separado ainda não implementado; não inicia uma conexão neste modo.", "PENDENTE", false, "SSH + SSL Proxy")
+        modeRow("WireGuard • OPÇÃO ALTERNATIVA", "Motor integrado para perfis WireGuard .conf válidos. Não conecta diretamente aos perfis OpenVPN da lista pública.", "INTEGRADO", true, "WireGuard")
         root.addView(modesCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 12 })
 
         val wireguardCard = card().apply {
@@ -413,11 +600,11 @@ class MainActivity : ComponentActivity() {
         root.addView(diagnosticsButton, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 8 })
 
         val note = label(
-            "SEGURANÇA E COMPATIBILIDADE\nO LivreNet pede a autorização VPN oficial do Android ao conectar pela primeira vez. O motor OpenVPN funciona dentro do app. Se um servidor tiver TLS, certificado, cifra ou autenticação incompatível, o app orienta a trocar de servidor sem desativar a validação de segurança. Perfis guardados podem ser exibidos offline, mas a conexão precisa de uma rede que alcance o servidor. Nenhum servidor garante internet móvel grátis ou ilimitada.",
+            "SEGURANÇA E COMPATIBILIDADE\nO Lúmen VPN pede a autorização VPN oficial do Android ao conectar pela primeira vez. O motor OpenVPN funciona dentro do app. Se um servidor tiver TLS, certificado, cifra ou autenticação incompatível, o app orienta a trocar de servidor sem desativar a validação de segurança. Perfis guardados podem ser exibidos offline, mas a conexão precisa de uma rede que alcance o servidor. Nenhum servidor garante internet móvel grátis ou ilimitada.",
             12f, muted
         ).apply { setPadding(4, 20, 4, 0) }
         root.addView(note)
-        root.addView(label("LIVRENET  •  CONEXÃO COM TRANSPARÊNCIA", 10f, muted, true).apply {
+        root.addView(label("LÚMEN VPN  •  CONEXÃO COM TRANSPARÊNCIA", 10f, muted, true).apply {
             gravity = Gravity.CENTER
             setPadding(0, 24, 0, 0)
         })
@@ -445,7 +632,7 @@ class MainActivity : ComponentActivity() {
                 if (!publicIp.matches(Regex("[0-9a-fA-F:.]{3,45}"))) {
                     throw IllegalStateException("O serviço de IP retornou uma resposta inesperada.")
                 }
-                val diagnosticPrefs = getSharedPreferences("livrenet_diagnostics", Context.MODE_PRIVATE)
+                val diagnosticPrefs = getSharedPreferences("lumenvpn_diagnostics", Context.MODE_PRIVATE)
                 val previousPublicIp = diagnosticPrefs.getString("last_public_ip", null)
 
                 probeConnection = (URL("https://clients3.google.com/generate_204").openConnection() as HttpURLConnection).apply {
@@ -502,10 +689,29 @@ class MainActivity : ComponentActivity() {
             "Acesso à internet não confirmado"
         }
         if (!hasInternet) {
-            statusText.text = "O LivreNet não conseguiu confirmar acesso à internet. Isso não informa se ainda há franquia no chip: o Android não fornece ao app uma verificação universal de saldo/pacote. Sem tráfego permitido pela operadora, um servidor VPN remoto pode não ser alcançável."
+            statusText.text = "O Lúmen VPN não conseguiu confirmar acesso à internet. Isso não informa se ainda há franquia no chip: o Android não fornece ao app uma verificação universal de saldo/pacote. Sem tráfego permitido pela operadora, um servidor VPN remoto pode não ser alcançável."
         } else if (!connected) {
             statusText.text = "Conexão de rede detectada. Isso não confirma que há franquia disponível nem garante acesso ao servidor VPN. Escolha um servidor ou importe um perfil WireGuard."
         }
+    }
+
+    private fun connectRandomServer() {
+        val candidates = lastServerCandidates.ifEmpty { loadCachedServers() }
+        if (candidates.isEmpty()) {
+            statusText.text = "Ainda não há servidores guardados. Buscando a lista pública para conectar automaticamente a uma opção aleatória…"
+            randomConnectAfterSearch = true
+            findFreeVpnGateServers()
+            return
+        }
+        lastServerCandidates = candidates
+        val availableChoices = candidates.filter { it.ip != lastSelectedServerIp }.ifEmpty { candidates }
+        val chosen = availableChoices.random()
+        selectedOpenVpnServer = chosen
+        selectedProtocol = "OpenVPN"
+        statusText.text = "Escolha aleatória: ${chosen.country} • ${chosen.ip}. Validando perfil antes de conectar…"
+        profileText.text = "Servidor aleatório selecionado entre ${candidates.size} perfis guardados."
+        refreshConnectButton()
+        selectOpenVpnServer(chosen)
     }
 
     private fun findFreeVpnGateServers() {
@@ -517,93 +723,197 @@ class MainActivity : ComponentActivity() {
         val cached = lastServerCandidates.ifEmpty { loadCachedServers() }
         if (!internetValidated && cached.isNotEmpty()) {
             lastServerCandidates = cached
-            statusText.text = "Sem internet validada. Abrindo ${cached.size} perfis salvos no aparelho; conectar ainda depende de alcançar o servidor."
-            profileText.text = "Lista offline. Alguns servidores podem estar fora do ar ou ter mudado de configuração."
-            showServerPicker(cached)
+            if (randomConnectAfterSearch) {
+                randomConnectAfterSearch = false
+                val chosen = cached.filter { it.ip != lastSelectedServerIp }.ifEmpty { cached }.random()
+                selectedOpenVpnServer = chosen
+                selectedProtocol = "OpenVPN"
+                statusText.text = "Opção aleatória offline: ${chosen.country} • ${chosen.ip}. Validando perfil…"
+                profileText.text = "Perfil salvo localmente; a conexão depende de o servidor ainda estar acessível."
+                selectOpenVpnServer(chosen)
+            } else {
+                statusText.text = "Sem internet validada. Abrindo ${cached.size} perfis salvos no aparelho; conectar ainda depende de alcançar o servidor."
+                profileText.text = "Lista offline. Alguns servidores podem estar fora do ar ou ter mudado de configuração."
+                showServerPicker(cached)
+            }
             return
         }
+
         freeVpnButton.isEnabled = false
         statusText.text = "Buscando servidores públicos disponíveis…"
-        profileText.text = "Consultando a lista pública do VPN Gate."
+        profileText.text = "Consultando a lista oficial e, se necessário, uma cópia pública de contingência."
         executor.execute {
+            try {
+                val result = fetchPublicVpnGateServers()
+                val candidates = result.first
+                val source = result.second
+                val diagnostic = result.third
+                if (candidates.isNotEmpty()) saveCachedServers(candidates)
+                runOnUiThread {
+                    freeVpnButton.isEnabled = true
+                    if (candidates.isEmpty()) {
+                        randomConnectAfterSearch = false
+                        statusText.text = "Nenhum perfil OpenVPN válido foi encontrado nas fontes consultadas."
+                        profileText.text = diagnostic
+                    } else {
+                        lastServerCandidates = candidates
+                        if (randomConnectAfterSearch) {
+                            randomConnectAfterSearch = false
+                            val chosen = candidates.filter { it.ip != lastSelectedServerIp }.ifEmpty { candidates }.random()
+                            selectedOpenVpnServer = chosen
+                            selectedProtocol = "OpenVPN"
+                            statusText.text = "Opção aleatória escolhida: ${chosen.country} • ${chosen.ip}. Validando perfil…"
+                            profileText.text = "${candidates.size} perfis compatíveis encontrados via ${source}. A disponibilidade real depende do servidor."
+                            selectOpenVpnServer(chosen)
+                        } else {
+                            statusText.text = "${candidates.size} perfis OpenVPN encontrados via ${source}."
+                            profileText.text = "Escolha um servidor. A lista confirma perfis válidos, não garante que cada servidor esteja online."
+                            showServerPicker(candidates)
+                        }
+                    }
+                }
+            } catch (error: Exception) {
+                val cachedNow = loadCachedServers()
+                runOnUiThread {
+                    freeVpnButton.isEnabled = true
+                    if (cachedNow.isNotEmpty()) {
+                        lastServerCandidates = cachedNow
+                        if (randomConnectAfterSearch) {
+                            randomConnectAfterSearch = false
+                            val chosen = cachedNow.filter { it.ip != lastSelectedServerIp }.ifEmpty { cachedNow }.random()
+                            selectedOpenVpnServer = chosen
+                            selectedProtocol = "OpenVPN"
+                            statusText.text = "Fontes online indisponíveis. Tentando perfil salvo: ${chosen.country} • ${chosen.ip}."
+                            profileText.text = "Erro de consulta: ${error.message ?: "sem detalhes"}. O servidor salvo pode ter expirado."
+                            selectOpenVpnServer(chosen)
+                        } else {
+                            statusText.text = "Não foi possível atualizar a lista online. Exibindo ${cachedNow.size} perfis salvos."
+                            profileText.text = "Diagnóstico: ${error.message ?: "erro de rede sem detalhes"}. A conexão depende de um servidor acessível."
+                            showServerPicker(cachedNow)
+                        }
+                    } else {
+                        randomConnectAfterSearch = false
+                        statusText.text = "Falha ao consultar as listas públicas."
+                        profileText.text = "${error.message ?: "Verifique a conexão com a internet."} Nenhum túnel foi iniciado."
+                    }
+                }
+            } finally {
+                runOnUiThread { freeVpnButton.isEnabled = true }
+            }
+        }
+    }
+
+    /**
+     * Fetches the official VPN Gate CSV first, then a public HTTPS mirror if the
+     * official response is blocked, malformed, or contains no usable profiles.
+     * Column positions are read from the CSV header instead of assumed fixed.
+     */
+    private fun fetchPublicVpnGateServers(): Triple<List<PublicServer>, String, String> {
+        val sources = listOf(
+            "VPN Gate oficial" to "https://www.vpngate.net/api/iphone/",
+            "espelho público HTTPS" to "https://cdn.jsdelivr.net/gh/GeorgeXie2333/vpngate-list-mirror@latest/data/vpngate.csv"
+        )
+        val failures = mutableListOf<String>()
+        for ((sourceName, sourceUrl) in sources) {
             var connection: HttpURLConnection? = null
             try {
-                connection = (URL("https://www.vpngate.net/api/iphone/").openConnection() as HttpURLConnection).apply {
+                connection = (URL(sourceUrl).openConnection() as HttpURLConnection).apply {
                     requestMethod = "GET"
                     connectTimeout = 12000
-                    readTimeout = 15000
-                    setRequestProperty("User-Agent", "LivreNet-Android/0.3")
+                    readTimeout = 18000
+                    instanceFollowRedirects = true
+                    setRequestProperty("User-Agent", "Mozilla/5.0 (Android) LumenVPN/0.4")
+                    setRequestProperty("Accept", "text/csv,text/plain,*/*")
                 }
                 val body = connection.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-                val candidates = body.lineSequence()
-                    .filter { line ->
-                        line.isNotBlank() && !line.startsWith("#") && !line.startsWith("*") &&
-                            line.count { it == ',' } >= 14
-                    }
+                val lines = body.lineSequence().toList()
+                val headerIndex = lines.indexOfFirst { line ->
+                    val normalized = line.trim().removePrefix("#").lowercase()
+                    normalized.contains("hostname") &&
+                        normalized.contains("ip") &&
+                        normalized.contains("openvpn_configdata_base64")
+                }
+                if (headerIndex < 0) {
+                    failures += "$sourceName: cabeçalho CSV não encontrado (resposta com ${body.length} caracteres)"
+                    continue
+                }
+
+                val headers = parseCsvRecord(lines[headerIndex].trim().removePrefix("#"))
+                    .map { it.trim().trim('"').removePrefix("#").lowercase() }
+                fun column(name: String, fallback: Int = -1): Int =
+                    headers.indexOfFirst { it == name.lowercase() }.takeIf { it >= 0 } ?: fallback
+
+                val hostColumn = column("hostname", 0)
+                val ipColumn = column("ip", 1)
+                val speedColumn = column("speed", 4)
+                val countryColumn = column("countrylong", 5)
+                val configColumn = column("openvpn_configdata_base64")
+                if (configColumn < 0 || ipColumn < 0 || headers.size <= maxOf(configColumn, ipColumn)) {
+                    failures += "$sourceName: colunas obrigatórias ausentes no CSV"
+                    continue
+                }
+
+                var rows = 0
+                var decoded = 0
+                var invalid = 0
+                var incompatible = 0
+                val parsed = lines.drop(headerIndex + 1).asSequence()
+                    .filter { it.isNotBlank() && !it.trimStart().startsWith("#") && !it.trimStart().startsWith("*") }
                     .mapNotNull { line ->
                         try {
                             val fields = parseCsvRecord(line)
-                            if (fields.size < 15) return@mapNotNull null
-                            val ip = fields[1].trim()
-                            val speed = fields[4].trim().toLongOrNull() ?: 0L
-                            val country = fields[5].trim().ifBlank { "País desconhecido" }
-                            val encodedConfig = fields[14].trim()
-                            val ovpn = String(Base64.decode(encodedConfig, Base64.DEFAULT), Charsets.UTF_8)
-                            if (ip.isBlank() || !ovpn.contains("client") || !ovpn.contains("remote ")) {
-                                null
-                            } else {
-                                PublicServer(
-                                    host = fields[0].trim().trim('"').ifBlank { ip },
-                                    ip = ip,
-                                    country = country,
-                                    speed = speed,
-                                    ovpn = ovpn
-                                )
+                            if (fields.size <= maxOf(configColumn, ipColumn, hostColumn, speedColumn, countryColumn)) return@mapNotNull null
+                            rows++
+                            val ip = fields[ipColumn].trim()
+                            val encodedConfig = fields[configColumn].trim()
+                            if (ip.isBlank() || encodedConfig.isBlank()) {
+                                invalid++
+                                return@mapNotNull null
                             }
+                            val ovpn = String(Base64.decode(encodedConfig, Base64.DEFAULT), Charsets.UTF_8)
+                            decoded++
+                            val hasRemote = Regex("(?im)^\\s*remote\\s+\\S+").containsMatchIn(ovpn)
+                            val hasClientMode = Regex("(?im)^\\s*(client|pull)(?:\\s|$)").containsMatchIn(ovpn)
+                            if (!hasRemote || !hasClientMode) {
+                                invalid++
+                                return@mapNotNull null
+                            }
+                            if (legacyClientCertificateIssue(ovpn) != null) {
+                                incompatible++
+                                return@mapNotNull null
+                            }
+                            PublicServer(
+                                host = fields[hostColumn].trim().ifBlank { ip },
+                                ip = ip,
+                                country = fields[countryColumn].trim().ifBlank { "País desconhecido" },
+                                speed = fields[speedColumn].trim().toLongOrNull() ?: 0L,
+                                ovpn = ovpn
+                            )
                         } catch (_: Exception) {
+                            invalid++
                             null
                         }
                     }
                     .distinctBy { it.ip }
                     .sortedByDescending { it.speed }
-                    .take(20)
                     .toList()
 
-                if (candidates.isNotEmpty()) saveCachedServers(candidates)
-                runOnUiThread {
-                    freeVpnButton.isEnabled = true
-                    if (candidates.isEmpty()) {
-                        statusText.text = "A lista pública não retornou perfis utilizáveis. Tente novamente mais tarde."
-                        profileText.text = "Nenhum servidor foi selecionado."
-                    } else {
-                        lastServerCandidates = candidates
-                        showServerPicker(candidates)
-                    }
-                }
+                val diagnostic = "$sourceName: linhas examinadas=$rows, perfis decodificados=$decoded, descartados=$invalid, certificados incompatíveis=$incompatible."
+                if (parsed.isNotEmpty()) return Triple(parsed, sourceName, diagnostic)
+                failures += diagnostic
             } catch (error: Exception) {
-                val cached = loadCachedServers()
-                runOnUiThread {
-                    freeVpnButton.isEnabled = true
-                    if (cached.isNotEmpty()) {
-                        lastServerCandidates = cached
-                        statusText.text = "Sem acesso à lista online. Mostrando ${cached.size} perfis salvos. A conexão só funcionará se houver uma rede que alcance o servidor."
-                        profileText.text = "Lista offline do aparelho. Perfis públicos podem ter expirado ou estar indisponíveis."
-                        showServerPicker(cached)
-                    } else {
-                        statusText.text = "Falha ao buscar servidores: ${error.message ?: "verifique a internet e tente novamente"}. Nenhum perfil offline foi salvo."
-                        profileText.text = "Nenhuma conexão VPN foi iniciada."
-                    }
-                }
+                failures += "$sourceName: ${error.message ?: error.javaClass.simpleName}"
             } finally {
                 connection?.disconnect()
             }
         }
+        return Triple(emptyList(), "nenhuma fonte", failures.joinToString(" "))
     }
 
     private fun saveCachedServers(servers: List<PublicServer>) {
         runCatching {
             val array = JSONArray()
-            servers.take(20).forEach { server ->
+            servers.forEach { server ->
                 array.put(JSONObject().apply {
                     put("host", server.host)
                     put("ip", server.ip)
@@ -612,14 +922,14 @@ class MainActivity : ComponentActivity() {
                     put("ovpn", server.ovpn)
                 })
             }
-            getSharedPreferences("livrenet_offline", Context.MODE_PRIVATE)
+            getSharedPreferences("lumenvpn_offline", Context.MODE_PRIVATE)
                 .edit().putString("public_openvpn_servers", array.toString()).apply()
         }
     }
 
     private fun loadCachedServers(): List<PublicServer> {
         return runCatching {
-            val raw = getSharedPreferences("livrenet_offline", Context.MODE_PRIVATE)
+            val raw = getSharedPreferences("lumenvpn_offline", Context.MODE_PRIVATE)
                 .getString("public_openvpn_servers", null) ?: return emptyList()
             val array = JSONArray(raw)
             (0 until array.length()).mapNotNull { index ->
@@ -628,14 +938,15 @@ class MainActivity : ComponentActivity() {
                 val ip = item.optString("ip")
                 val country = item.optString("country", "País desconhecido")
                 val ovpn = item.optString("ovpn")
-                if (ip.isBlank() || ovpn.isBlank() || !ovpn.contains("remote ")) null
+                if (ip.isBlank() || ovpn.isBlank() || !ovpn.contains("remote ") || legacyClientCertificateIssue(ovpn) != null) null
                 else PublicServer(host, ip, country, item.optLong("speed", 0L), ovpn)
             }
                 .distinctBy { it.ip }
                 .sortedByDescending { it.speed }
-                .take(20)
+                
         }.getOrDefault(emptyList())
     }
+
 
     /**
      * Parses one CSV record while respecting quoted fields and escaped double quotes.
@@ -680,7 +991,7 @@ class MainActivity : ComponentActivity() {
             setPadding(dp(18), dp(8), dp(18), dp(8))
         }
         panel.addView(TextView(this).apply {
-            text = "Escolha um servidor para conectar dentro do LivreNet. Se um certificado falhar, volte aqui e tente outro."
+            text = "Escolha um servidor para conectar dentro do Lúmen VPN. Se um certificado falhar, volte aqui e tente outro."
             textSize = 13f
             setTextColor(android.graphics.Color.rgb(157, 178, 199))
             setPadding(0, 0, 0, dp(12))
@@ -689,7 +1000,7 @@ class MainActivity : ComponentActivity() {
         val list = android.widget.LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
-        servers.take(20).forEachIndexed { index, server ->
+        servers.forEachIndexed { index, server ->
             val card = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 setPadding(dp(14), dp(12), dp(14), dp(12))
@@ -715,10 +1026,13 @@ class MainActivity : ComponentActivity() {
             card.isClickable = true
             card.isFocusable = true
             card.setOnClickListener {
+                attemptedOpenVpnServerIps.clear()
+                lastAutomaticFailoverAt = 0L
                 selectedOpenVpnServer = server
+                selectedProtocol = "OpenVPN"
                 serverDialog?.dismiss()
-                profileText.text = "Selecionado: ${server.country} • ${server.ip}. Use o botão Conectar na tela principal."
-                statusText.text = "Servidor selecionado. Toque em Conectar para iniciar o túnel."
+                profileText.text = "Selecionado: ${server.country} • ${server.ip}. Toque em Conectar para iniciar."
+                statusText.text = "Servidor selecionado. A conexão ainda não foi iniciada."
                 refreshConnectButton()
             }
             list.addView(card, LinearLayout.LayoutParams(-1, -2).apply {
@@ -744,6 +1058,34 @@ class MainActivity : ComponentActivity() {
 
     private var serverDialog: AlertDialog? = null
 
+    private fun tryAutomaticOpenVpnFailover(reason: String) {
+        val now = System.currentTimeMillis()
+        if (now - lastAutomaticFailoverAt < 4000L) return
+        val next = lastServerCandidates.firstOrNull {
+            it.ip != lastSelectedServerIp &&
+                !attemptedOpenVpnServerIps.contains(it.ip) &&
+                legacyClientCertificateIssue(it.ovpn) == null
+        }
+        if (next == null) {
+            if (!tlsDialogShowing && !isFinishing) {
+                runOnUiThread {
+                    statusText.text = "Tentativas automáticas concluídas. Último erro do OpenVPN: ${reason.take(220)}"
+                    showTlsCompatibilityDialog(emptyList())
+                }
+            }
+            return
+        }
+        lastAutomaticFailoverAt = now
+        attemptedOpenVpnServerIps.add(next.ip)
+        runOnUiThread {
+            if (isFinishing) return@runOnUiThread
+            statusText.setTextColor(android.graphics.Color.rgb(157, 178, 199))
+            statusText.text = "Falha no servidor ${lastSelectedServerIp ?: "atual"}. Tentando automaticamente ${next.country} • ${next.ip}…"
+            profileText.text = "Alternativa automática. Erro anterior do motor OpenVPN: ${reason.take(180)}"
+            selectOpenVpnServer(next)
+        }
+    }
+
     private fun showTlsCompatibilityDialog(alternatives: List<PublicServer>) {
         if (tlsDialogShowing || isFinishing) return
         tlsDialogShowing = true
@@ -754,7 +1096,7 @@ class MainActivity : ComponentActivity() {
             setPadding(dp(20), dp(10), dp(20), dp(8))
         }
         panel.addView(TextView(this).apply {
-            text = "O servidor pode estar usando certificado, versão TLS, cifra ou autenticação incompatível. O LivreNet não desativa a validação de certificados. Tente outro servidor público ou atualize a lista."
+            text = "O servidor pode estar usando certificado, versão TLS, cifra ou autenticação incompatível. O Lúmen VPN não desativa a validação de certificados. Tente outro servidor público ou atualize a lista."
             textSize = 14f
             setTextColor(android.graphics.Color.rgb(65, 80, 96))
         })
@@ -782,6 +1124,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun selectOpenVpnServer(server: PublicServer) {
+        attemptedOpenVpnServerIps.add(server.ip)
         val attemptId = ++connectAttemptId
         lastSelectedServerIp = server.ip
         openVpnConnecting = true
@@ -790,19 +1133,28 @@ class MainActivity : ComponentActivity() {
         profileText.text = "${server.country} • ${server.ip} • verificando configuração antes de conectar."
 
         executor.execute {
-            val validation = OpenVpnNative.validateProfileOrMessage(server.ovpn)
+            val legacyCertificateIssue = legacyClientCertificateIssue(server.ovpn)
+            val validation = if (legacyCertificateIssue != null) {
+                "ERRO DE PERFIL: $legacyCertificateIssue"
+            } else {
+                OpenVpnNative.validateProfileOrMessage(server.ovpn)
+            }
             runOnUiThread {
                 if (attemptId != connectAttemptId) return@runOnUiThread
                 if (!validation.startsWith("OK:")) {
                     openVpnConnecting = false
                     refreshConnectButton()
                     statusText.text = validation
-                    profileText.text = "Perfil não iniciado. Verifique a configuração ou tente outro servidor."
-                    AlertDialog.Builder(this)
-                        .setTitle("Não foi possível validar o perfil")
-                        .setMessage(validation)
-                        .setPositiveButton("Entendi", null)
-                        .show()
+                    profileText.text = "Perfil incompatível ignorado. Tentando outro servidor público compatível."
+                    if (lastServerCandidates.isNotEmpty()) {
+                        tryAutomaticOpenVpnFailover(validation)
+                    } else {
+                        AlertDialog.Builder(this)
+                            .setTitle("Não foi possível validar o perfil")
+                            .setMessage(validation)
+                            .setPositiveButton("Entendi", null)
+                            .show()
+                    }
                     return@runOnUiThread
                 }
 
@@ -826,6 +1178,44 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    /**
+     * OpenVPN 3's Rust TLS stack rejects legacy X.509 v1 client certificates.
+     * Detect inline PEM client certificates before connecting so public VPN Gate
+     * profiles with unsupported certificate versions can be skipped automatically.
+     * This does not weaken TLS or bypass certificate verification.
+     */
+    private fun legacyClientCertificateIssue(profile: String): String? {
+        val certMatch = Regex("(?is)<cert\\s*>(.*?)</cert\\s*>").find(profile) ?: return null
+        val pem = certMatch.groupValues[1].trim()
+        if (!pem.contains("-----BEGIN CERTIFICATE-----")) return null
+        return try {
+            val certificate = java.security.cert.CertificateFactory
+                .getInstance("X.509")
+                .generateCertificate(pem.byteInputStream()) as java.security.cert.X509Certificate
+            if (certificate.version != 3) {
+                "certificado de cliente X.509 versão ${certificate.version} incompatível com o OpenVPN 3/Rust TLS. O app vai tentar outro perfil."
+            } else {
+                null
+            }
+        } catch (_: Exception) {
+            // Leave malformed/unsupported formats to the native OpenVPN validator.
+            null
+        }
+    }
+
+    private fun requestVpnPermissionTest() {
+        val permissionIntent = VpnService.prepare(this)
+        if (permissionIntent == null) {
+            statusText.text = "Permissão VPN já concedida pelo Android. Nenhum túnel foi iniciado."
+            internetText.text = "Permissão VPN concedida • túnel não iniciado"
+            refreshConnectButton()
+            return
+        }
+        vpnPermissionTestPending = true
+        statusText.text = "Solicitando apenas a permissão VPN do Android. Nenhum servidor será contatado."
+        vpnPermission.launch(permissionIntent)
     }
 
     private fun requestVpnPermission() {
@@ -891,18 +1281,131 @@ class MainActivity : ComponentActivity() {
 
     private fun refreshConnectButton() {
         if (!::connectButton.isInitialized) return
-        val active = connected || openVpnConnected
+        val active = connected || openVpnConnected || sshProxyConnected
         connectButton.text = when {
-            active -> "Desconectar"
-            openVpnConnecting -> "Cancelar conexão"
-            else -> "Conectar"
+            active -> "■  DESCONECTAR VPN"
+            openVpnConnecting || sshProxyConnecting -> "Cancelar conexão"
+            selectedProtocol == "OpenVPN" && selectedOpenVpnServer == null -> "⚡ CONECTAR AUTOMATICAMENTE"
+            else -> "🔐 CONECTAR"
         }
-        connectButton.isEnabled = active || openVpnConnecting || selectedOpenVpnServer != null || config != null
+        connectButton.isEnabled = active || openVpnConnecting || sshProxyConnecting ||
+            selectedProtocol == "OpenVPN" || selectedOpenVpnServer != null || config != null ||
+            selectedProtocol in setOf("SSH Direct", "SSH + Proxy", "SSH + SSL")
         connectButton.contentDescription = when {
             active -> "Desconectar a VPN"
-            openVpnConnecting -> "Cancelar tentativa de conexão VPN"
+            openVpnConnecting || sshProxyConnecting -> "Cancelar tentativa de conexão"
+            selectedProtocol == "OpenVPN" && selectedOpenVpnServer == null -> "Buscar servidores públicos compatíveis e conectar automaticamente"
             else -> selectedOpenVpnServer?.let { "Conectar ao servidor ${it.country}" } ?: "Conectar à VPN"
         }
+    }
+
+
+    private fun showSshProxyDialog() {
+        val hostInput = EditText(this).apply { hint = "Host do servidor SSH"; setSingleLine(true) }
+        val portInput = EditText(this).apply {
+            hint = "Porta SSH (22)"
+            inputType = InputType.TYPE_CLASS_NUMBER
+            setText("22")
+            setSingleLine(true)
+        }
+        val userInput = EditText(this).apply { hint = "Usuário SSH"; setSingleLine(true) }
+        val passwordInput = EditText(this).apply {
+            hint = "Senha SSH"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+            setSingleLine(true)
+        }
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(40, 8, 40, 0)
+            addView(hostInput)
+            addView(portInput)
+            addView(userInput)
+            addView(passwordInput)
+        }
+        AlertDialog.Builder(this)
+            .setTitle(if (selectedProtocol == "SSH + SSL") "Conectar por SSH + TLS" else "Conectar por SSH + SOCKS5")
+            .setMessage("Use apenas um servidor SSH autorizado. Importe um arquivo known_hosts confiável para validar a chave do servidor antes de conectar.")
+            .setView(panel)
+            .setNegativeButton("Cancelar", null)
+            .setNeutralButton("Importar known_hosts") { _, _ ->
+                knownHostsPicker.launch(arrayOf("text/plain", "application/octet-stream", "*/*"))
+            }
+            .setPositiveButton("Conectar") { _, _ ->
+                val host = hostInput.text.toString().trim()
+                val port = portInput.text.toString().toIntOrNull() ?: 22
+                val username = userInput.text.toString().trim()
+                val password = passwordInput.text.toString()
+                if (host.isBlank() || username.isBlank() || password.isBlank() || port !in 1..65535) {
+                    statusText.text = "Informe host, porta, usuário e senha SSH válidos."
+                } else {
+                    if (selectedProtocol == "SSH + SSL Proxy") {
+                        statusText.text = "SSH + SSL Proxy ainda não está disponível: falta o motor de proxy TLS separado."
+                    } else {
+                        connectSshProxy(host, port, username, password, tlsWrapped = selectedProtocol == "SSH + SSL")
+                    }
+                }
+            }
+            .show()
+    }
+
+    private val knownHostsPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        runCatching {
+            contentResolver.openInputStream(uri)?.use { input ->
+                File(filesDir, "ssh_known_hosts").outputStream().use { output -> input.copyTo(output) }
+            } ?: throw IllegalArgumentException("Não foi possível ler o arquivo.")
+            statusText.text = "known_hosts importado. A chave do servidor será validada antes da conexão."
+        }.onFailure { statusText.text = "Falha ao importar known_hosts: ${it.message}" }
+    }
+
+    private fun connectSshProxy(host: String, port: Int, username: String, password: String, tlsWrapped: Boolean = false) {
+        val knownHosts = File(filesDir, "ssh_known_hosts")
+        if (!knownHosts.isFile) {
+            statusText.text = "Importe um known_hosts confiável antes de conectar. A validação da chave SSH não será desativada."
+            return
+        }
+        val args = Bundle().apply {
+            putString(SshVpnService.EXTRA_HOST, host)
+            putInt(SshVpnService.EXTRA_PORT, port)
+            putString(SshVpnService.EXTRA_USERNAME, username)
+            putString(SshVpnService.EXTRA_PASSWORD, password)
+            putString(SshVpnService.EXTRA_KNOWN_HOSTS, knownHosts.absolutePath)
+            putBoolean(SshVpnService.EXTRA_TLS, tlsWrapped)
+        }
+        val permissionIntent = VpnService.prepare(this)
+        sshProxyConnecting = true
+        refreshConnectButton()
+        statusText.text = "Solicitando autorização VPN do Android para criar o túnel SSH TCP…"
+        if (permissionIntent == null) {
+            startSshVpnService(args)
+        } else {
+            pendingSshStart = args
+            vpnPermission.launch(permissionIntent)
+        }
+    }
+
+    private fun startSshVpnService(args: Bundle) {
+        val intent = Intent(this, SshVpnService::class.java).apply {
+            action = SshVpnService.ACTION_START
+            putExtras(args)
+        }
+        sshProxyConnecting = true
+        sshProxyConnected = false
+        refreshConnectButton()
+        ContextCompat.startForegroundService(this, intent)
+    }
+
+    private fun disconnectSshProxy() {
+        sshProxyConnecting = false
+        sshProxyConnected = false
+        pendingSshStart = null
+        val intent = Intent(this, SshVpnService::class.java).setAction(SshVpnService.ACTION_STOP)
+        runCatching { startService(intent) }
+        runCatching { sshProxy?.close() }
+        sshProxy = null
+        statusText.text = "Solicitando desconexão do túnel SSH…"
+        internetText.text = "Túnel SSH desconectando"
+        refreshConnectButton()
     }
 
     private fun renderState() {
@@ -911,7 +1414,13 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
-        executor.shutdown()
+        // Close transport resources before shutting down the worker so an SSH session
+        // or local SOCKS listener cannot survive the Activity lifecycle accidentally.
+        sshProxyConnecting = false
+        sshProxyConnected = false
+        runCatching { sshProxy?.close() }
+        sshProxy = null
+        executor.shutdownNow()
         super.onDestroy()
     }
 }

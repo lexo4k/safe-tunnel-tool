@@ -214,214 +214,132 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun buildScreen() {
-        val ink = android.graphics.Color.rgb(7, 17, 31)
-        val panel = android.graphics.Color.rgb(15, 31, 49)
-        val mint = android.graphics.Color.rgb(34, 211, 197)
-        val white = android.graphics.Color.rgb(239, 246, 255)
-        val muted = android.graphics.Color.rgb(157, 178, 199)
-
-        fun card(): LinearLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(18, 16, 18, 16)
-            background = android.graphics.drawable.GradientDrawable().apply {
-                setColor(panel)
-                cornerRadius = 22f
-                setStroke(1, android.graphics.Color.rgb(35, 57, 78))
-            }
-        }
-        fun label(textValue: String, size: Float, color: Int, bold: Boolean = false): TextView =
+        val ink = android.graphics.Color.rgb(6, 13, 28)
+        val panel = android.graphics.Color.rgb(15, 27, 48)
+        val cyan = android.graphics.Color.rgb(0, 218, 230)
+        val white = android.graphics.Color.rgb(241, 247, 255)
+        val muted = android.graphics.Color.rgb(143, 162, 190)
+        fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+        fun label(value: String, size: Float, color: Int, bold: Boolean = false) =
             TextView(this).apply {
-                text = textValue
+                text = value
                 textSize = size
                 setTextColor(color)
                 if (bold) setTypeface(typeface, android.graphics.Typeface.BOLD)
             }
-        fun styleButton(button: Button, primary: Boolean = false) {
-            button.isAllCaps = false
-            button.textSize = 15f
-            button.setTextColor(if (primary) ink else white)
-            button.background = android.graphics.drawable.GradientDrawable().apply {
-                setColor(if (primary) mint else android.graphics.Color.rgb(26, 45, 65))
-                cornerRadius = 16f
-                if (!primary) setStroke(1, android.graphics.Color.rgb(50, 76, 99))
+        fun card() = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(18), dp(16), dp(18), dp(16))
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(panel); cornerRadius = dp(18).toFloat()
+                setStroke(dp(1), android.graphics.Color.rgb(35, 55, 82))
             }
-            button.minHeight = 54
-            button.setPadding(16, 12, 16, 12)
         }
-
-        val scroll = android.widget.ScrollView(this).apply {
-            isFillViewport = true
-            setBackgroundColor(ink)
-        }
+        fun actionButton(textValue: String, primary: Boolean = false, action: () -> Unit) =
+            Button(this).apply {
+                text = textValue; isAllCaps = false; textSize = 15f
+                setTextColor(if (primary) ink else white)
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    setColor(if (primary) cyan else android.graphics.Color.rgb(27, 43, 68))
+                    cornerRadius = dp(14).toFloat()
+                    if (!primary) setStroke(dp(1), android.graphics.Color.rgb(55, 78, 108))
+                }
+                minHeight = dp(52); setPadding(dp(14), dp(8), dp(14), dp(8))
+                setOnClickListener { action() }
+            }
+        val scroll = android.widget.ScrollView(this).apply { setBackgroundColor(ink); isFillViewport = true }
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(20, 22, 20, 28)
-            layoutParams = ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            )
+            setPadding(dp(18), dp(20), dp(18), dp(28))
         }
-
-        val brandRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        val logo = ImageView(this).apply {
+        val brand = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        brand.addView(ImageView(this).apply {
             setImageResource(R.drawable.livrenet_logo)
-            contentDescription = "Logotipo LivreNet, proteção e conexão global"
-            layoutParams = LinearLayout.LayoutParams(68, 68).apply { rightMargin = 14 }
-        }
-        val brandText = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        brandText.addView(label("LIVRENET", 26f, white, true))
-        brandText.addView(label("PROTEÇÃO • CONEXÃO GLOBAL", 11f, mint, true))
-        brandText.addView(label("Versão ${BuildConfig.VERSION_NAME} • build ${BuildConfig.GIT_SHA}", 11f, muted))
-        brandRow.addView(logo)
-        brandRow.addView(brandText)
-        root.addView(brandRow)
-
-        val hero = card().apply {
-            setPadding(20, 20, 20, 20)
-            val eyebrow = label("VPN COM TRANSPARÊNCIA", 11f, mint, true)
-            addView(eyebrow)
-            val headline = label("Conecte. Verifique. Navegue.", 24f, white, true).apply {
-                setPadding(0, 8, 0, 6)
-            }
-            addView(headline)
-            addView(label("Uma experiência simples, com diagnóstico de conexão e estado da rede sem indicadores inventados.", 14f, muted))
-        }
-        root.addView(hero, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 22 })
-
-        val networkCard = card()
-        networkCard.addView(label("ESTADO DA REDE E DO TÚNEL", 11f, muted, true))
-        internetText = label("Verificando internet…", 16f, white, true).apply {
-            setPadding(0, 8, 0, 2)
-        }
-        networkCard.addView(internetText)
-        statusText = label("Escolha uma opção para começar.", 13f, muted).apply {
-            setPadding(0, 6, 0, 0)
-        }
-        networkCard.addView(statusText)
-        root.addView(networkCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 14 })
-
-        root.addView(label("EXPLORAR E CONECTAR", 12f, mint, true).apply {
-            setPadding(2, 24, 0, 10)
+            contentDescription = "LivreNet"
+            layoutParams = LinearLayout.LayoutParams(dp(54), dp(54)).apply { rightMargin = dp(12) }
         })
-
-        val serverCard = card()
-        serverCard.addView(label("🌐  Servidores ao redor do mundo", 17f, white, true))
-        serverCard.addView(label("Consulte a lista pública e escolha um perfil disponível. A disponibilidade varia por país e horário.", 13f, muted).apply {
-            setPadding(0, 6, 0, 12)
+        val brandCopy = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        brandCopy.addView(label("LIVRENET", 25f, white, true))
+        brandCopy.addView(label("VPN • CONEXÃO PRIVADA", 10f, cyan, true))
+        brand.addView(brandCopy)
+        root.addView(brand)
+        root.addView(label("Sua conexão, em um toque.", 23f, white, true).apply {
+            setPadding(0, dp(24), 0, dp(5))
         })
-        freeVpnButton = Button(this).apply {
-            text = "Buscar servidores OpenVPN"
-            styleButton(this, true)
-            setOnClickListener { findFreeVpnGateServers() }
-        }
-        serverCard.addView(freeVpnButton, matchWidth())
-        connectButton = Button(this).apply {
-            text = "Conectar"
-            isEnabled = false
-            styleButton(this, true)
-            setOnClickListener {
+        root.addView(label("Escolha um servidor e conecte pelo próprio LivreNet.", 13f, muted))
+        val statusCard = card().apply {
+            addView(label("STATUS DA CONEXÃO", 10f, cyan, true))
+            internetText = label("Verificando rede…", 16f, white, true).apply { setPadding(0, dp(8), 0, dp(3)) }
+            addView(internetText)
+            statusText = label("VPN desconectada", 12f, muted)
+            addView(statusText)
+            connectButton = actionButton("CONECTAR", true) {
                 when {
                     openVpnConnected || openVpnConnecting -> {
                         connectAttemptId++
-                        val shouldStopService = openVpnServiceStarted || openVpnConnected
-                        openVpnConnected = false
-                        openVpnConnecting = false
-                        openVpnServiceStarted = false
-                        if (shouldStopService) OpenVpnVpnService.disconnect(this@MainActivity)
-                        statusText.text = "Cancelando conexão e encerrando o túnel…"
-                        refreshConnectButton()
+                        val stop = openVpnServiceStarted || openVpnConnected
+                        openVpnConnected = false; openVpnConnecting = false; openVpnServiceStarted = false
+                        if (stop) OpenVpnVpnService.disconnect(this@MainActivity)
+                        statusText.text = "Encerrando conexão…"; refreshConnectButton()
                     }
                     connected -> disconnectTunnel()
                     selectedOpenVpnServer != null -> selectOpenVpnServer(selectedOpenVpnServer!!)
                     config != null -> requestVpnPermission()
-                    else -> statusText.text = "Toque em Buscar servidores OpenVPN ou importe um perfil WireGuard válido."
+                    else -> {
+                        statusText.text = "Selecione um servidor OpenVPN ou importe um perfil WireGuard."
+                        findFreeVpnGateServers()
+                    }
                 }
             }
+            addView(connectButton, LinearLayout.LayoutParams(-1, dp(54)).apply { topMargin = dp(16) })
         }
-        serverCard.addView(connectButton, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 10 })
-        root.addView(serverCard)
-
-        val modesCard = card()
-        modesCard.addView(label("MODOS DE CONEXÃO", 12f, mint, true))
-        modesCard.addView(label("Escolha a tecnologia para sua conexão", 14f, white, true).apply {
-            setPadding(0, 6, 0, 12)
+        root.addView(statusCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(22) })
+        root.addView(label("SERVIDORES", 11f, cyan, true).apply { setPadding(2, dp(24), 0, dp(9)) })
+        val servers = card()
+        servers.addView(label("Servidores disponíveis", 17f, white, true))
+        servers.addView(label("Lista pública de perfis OpenVPN. Servidores de terceiros podem ficar indisponíveis; o LivreNet não opera esses servidores.", 12f, muted).apply {
+            setPadding(0, dp(6), 0, dp(12))
         })
-
-        fun modeRow(title: String, description: String, state: String, available: Boolean) {
+        freeVpnButton = actionButton("BUSCAR SERVIDORES", true) { findFreeVpnGateServers() }
+        servers.addView(freeVpnButton, LinearLayout.LayoutParams(-1, dp(52)))
+        root.addView(servers)
+        root.addView(label("MODO DE CONEXÃO", 11f, cyan, true).apply { setPadding(2, dp(24), 0, dp(9)) })
+        val modes = card()
+        fun mode(name: String, detail: String, available: Boolean, selected: Boolean = false) {
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(14, 12, 14, 12)
+                setPadding(dp(13), dp(12), dp(13), dp(12))
                 background = android.graphics.drawable.GradientDrawable().apply {
-                    setColor(android.graphics.Color.rgb(19, 39, 58))
-                    cornerRadius = 16f
-                    setStroke(1, if (available) mint else android.graphics.Color.rgb(50, 76, 99))
+                    setColor(android.graphics.Color.rgb(20, 37, 61))
+                    cornerRadius = dp(13).toFloat()
+                    setStroke(dp(1), if (selected) cyan else android.graphics.Color.rgb(43, 64, 91))
                 }
             }
-            val heading = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-            }
-            heading.addView(label(title, 15f, white, true), LinearLayout.LayoutParams(0, -2, 1f))
-            heading.addView(label(state, 10f, if (available) mint else muted, true))
-            row.addView(heading)
-            row.addView(label(description, 12f, muted).apply { setPadding(0, 5, 0, 0) })
-            modesCard.addView(row, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 8 })
+            row.addView(label(name, 14f, white, true))
+            row.addView(label(detail, 11f, muted).apply { setPadding(0, dp(4), 0, 0) })
+            modes.addView(row, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) })
         }
-
-        modeRow("OpenVPN • MOTOR PRINCIPAL", "Núcleo OpenVPN 3 integrado ao app. Certificados ou servidores públicos incompatíveis podem ser recusados com segurança; escolha outro servidor se isso ocorrer.", "INTEGRADO", true)
-        modeRow("SSH Direct", "Ainda precisa de motor SSH e servidor autorizado.", "EM DESENVOLVIMENTO", false)
-        modeRow("SSH + Proxy", "Ainda precisa de motor SSH/Proxy e servidor autorizado.", "EM DESENVOLVIMENTO", false)
-        modeRow("SSH + SSL", "Ainda precisa de transporte TLS/SSH e servidor autorizado.", "EM DESENVOLVIMENTO", false)
-        modeRow("SSH + SSL Proxy", "Ainda precisa de transporte TLS/SSH, proxy e servidor autorizado.", "EM DESENVOLVIMENTO", false)
-        modeRow("WireGuard • OPÇÃO ALTERNATIVA", "Motor integrado para perfis WireGuard .conf válidos. Não conecta diretamente aos perfis OpenVPN da lista pública.", "INTEGRADO", true)
-        root.addView(modesCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 12 })
-
-        val wireguardCard = card().apply {
-            setPadding(18, 18, 18, 18)
-        }
-        wireguardCard.addView(label("🔐  Conexão alternativa • WireGuard", 17f, white, true))
-        profileText = label("Nenhum perfil WireGuard carregado.", 13f, muted).apply {
-            setPadding(0, 6, 0, 12)
-        }
-        wireguardCard.addView(profileText)
-
-        val importButton = Button(this).apply {
-            text = "Importar perfil WireGuard (.conf)"
-            styleButton(this)
-            setOnClickListener {
+        mode("OpenVPN", "Motor integrado e funcional com perfil/servidor compatível.", true, true)
+        mode("WireGuard", "Motor integrado; requer importar um perfil .conf válido.", true)
+        mode("SSH Direct", "Motor SSH ainda não integrado nesta versão.", false)
+        mode("SSH + Proxy", "Motor SSH/Proxy ainda não integrado nesta versão.", false)
+        mode("SSH + SSL", "Transporte TLS/SSH ainda não integrado nesta versão.", false)
+        mode("SSH + SSL Proxy", "Transporte TLS/SSH/Proxy ainda não integrado nesta versão.", false)
+        root.addView(modes)
+        val profile = card().apply {
+            addView(label("PERFIL WIREGUARD", 11f, cyan, true))
+            profileText = label("Nenhum perfil carregado.", 12f, muted).apply { setPadding(0, dp(7), 0, dp(10)) }
+            addView(profileText)
+            addView(actionButton("IMPORTAR PERFIL .CONF") {
                 profilePicker.launch(arrayOf("application/octet-stream", "text/plain", "*/*"))
-            }
+            }, LinearLayout.LayoutParams(-1, dp(50)))
         }
-        wireguardCard.addView(importButton, matchWidth())
-        root.addView(wireguardCard, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 12 })
-
-        val checkInternetButton = Button(this).apply {
-            text = "Atualizar estado da internet"
-            styleButton(this)
-            setOnClickListener { refreshInternetStatus() }
-        }
-        root.addView(checkInternetButton, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 12 })
-
-        val diagnosticsButton = Button(this).apply {
-            text = "Testar túnel e IP público"
-            styleButton(this)
-            setOnClickListener { runTunnelDiagnostics() }
-        }
-        root.addView(diagnosticsButton, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 8 })
-
-        val note = label(
-            "SEGURANÇA E COMPATIBILIDADE\nO LivreNet pede a autorização VPN oficial do Android ao conectar pela primeira vez. O motor OpenVPN funciona dentro do app. Se um servidor tiver TLS, certificado, cifra ou autenticação incompatível, o app orienta a trocar de servidor sem desativar a validação de segurança. Perfis guardados podem ser exibidos offline, mas a conexão precisa de uma rede que alcance o servidor. Nenhum servidor garante internet móvel grátis ou ilimitada.",
-            12f, muted
-        ).apply { setPadding(4, 20, 4, 0) }
-        root.addView(note)
-        root.addView(label("LIVRENET  •  CONEXÃO COM TRANSPARÊNCIA", 10f, muted, true).apply {
-            gravity = Gravity.CENTER
-            setPadding(0, 24, 0, 0)
+        root.addView(profile, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
+        root.addView(actionButton("DIAGNÓSTICO DE CONEXÃO") { refreshInternetStatus() },
+            LinearLayout.LayoutParams(-1, dp(52)).apply { topMargin = dp(12) })
+        root.addView(label("A VPN precisa de uma conexão Wi-Fi ou móvel ativa e de um servidor autorizado. O LivreNet não cria internet nem fornece acesso gratuito à rede móvel.", 11f, muted).apply {
+            setPadding(dp(3), dp(18), dp(3), 0)
         })
-
         scroll.addView(root)
         setContentView(scroll)
     }
